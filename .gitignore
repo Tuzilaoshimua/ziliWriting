@@ -6,3 +6,6 @@ dist
 .DS_Store
 .test-appdata
 .uploads
+.tauri/update.key
+.tauri/*.key
+.env

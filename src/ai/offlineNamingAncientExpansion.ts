@@ -36,13 +36,16 @@ export const ancientCultureConfigs = {
   'mesoamerican-formative': { label: '中美洲早期文明（奥尔梅克—特奥蒂瓦坎）', periods: [period('olmec', '奥尔梅克文明（约前1500—前400年，考古参考）', 'archaeological'), period('zapotec', '早期萨波特克与蒙特阿尔班（约前700—公元900年，考古参考）', 'archaeological'), period('teotihuacan', '特奥蒂瓦坎（约前100—公元550年，考古参考）', 'archaeological')], surnames: [], given: [], structure: '统治者姓名尚不能可靠读取，只提供考古地点、社会结构和器物', sourceClass: 'historical' as const },
   'preinca-andes': { label: '前印加安第斯（卡拉尔—奇穆）', periods: [period('caral', '卡拉尔—北小圣地（约前3000—前1800年，考古参考）', 'archaeological'), period('chavin', '查文文化（约前900—前200年，考古参考）', 'archaeological'), period('moche-nazca', '莫切—纳斯卡（约100—800年，考古参考）', 'archaeological'), period('wari-tiwanaku', '瓦里—蒂瓦纳科（约500—1000年，考古参考）', 'archaeological'), period('chimu', '奇穆王国（约900—1470年）')], surnames: [], given: [], structure: '无可读姓名时期不生成人物；奇穆期仅用殖民初期记载保存的王名', sourceClass: 'historical' as const },
   'lapita-pacific': { label: '早期太平洋（拉皮塔—波利尼西亚定居）', periods: [period('lapita', '拉皮塔文化（约前1600—前500年，考古参考）', 'archaeological'), period('early-polynesian-settlement', '早期波利尼西亚定居（约前500—公元1000年，考古参考）', 'archaeological')], surnames: [], given: [], structure: '考古阶段不将后世口传谱系倒推为同期姓名', sourceClass: 'historical' as const },
+  'ancient-iberia': { label: '古代伊比利亚（塔尔特索斯—罗马西班牙）', periods: [period('iberian-pre-roman', '前罗马伊比利亚（约前1000—前218年）'), period('roman-hispania', '罗马西班牙（约前218—公元476年）')], surnames: [], given: [], structure: '前罗马期使用伊比利亚、凯尔特伊比利亚和卢西塔尼亚史料所见单名；罗马期使用罗马西班牙的完整罗马名或明确的本地名，不套现代西班牙姓氏', sourceClass: 'historical' as const },
+  'nordic-prehistory': { label: '北欧史前（青铜时代—铁器时代）', periods: [period('nordic-bronze-age', '北欧青铜时代（约前1700—前500年）', 'archaeological'), period('pre-roman-nordic-iron', '北欧前罗马铁器时代（约前500—公元1年）', 'archaeological')], surnames: [], given: [], structure: '史前考古层不把后世古诺斯姓名倒推为同期人物；仅生成有考古依据的地点、活动群体和器物', sourceClass: 'historical' as const },
+  'pre-roman-lowlands': { label: '罗马前低地（凯尔特—弗里西）', periods: [period('iron-age-lowlands', '罗马前低地铁器时代（约前800—前1年）', 'archaeological')], surnames: [], given: [], structure: '铁器时代低地以考古可见的聚落、生产和交换群体为主，不使用中世纪或现代荷兰姓氏，也不把罗马时期人物倒推到本期', sourceClass: 'historical' as const },
 }
 
 export const ancientCultureRegions: Record<keyof typeof ancientCultureConfigs, string> = {
   mesopotamia: '西亚与高加索', 'bronze-iron-anatolia': '西亚与高加索', 'ancient-levant': '西亚与高加索', 'iranian-central-asia': '北亚与中亚',
   'nubia-kush': '非洲', 'aksum-horn': '非洲', 'early-britain': '欧洲', 'gaul-franks': '欧洲', 'ancient-germanic': '欧洲', 'etruscan-italic': '欧洲',
   'prehistoric-japan': '东亚', 'early-korea': '东亚', 'indus-valley': '南亚', 'gandhara-kushan': '南亚',
-  'mesoamerican-formative': '中美洲', 'preinca-andes': '南美洲', 'lapita-pacific': '大洋洲',
+  'mesoamerican-formative': '中美洲', 'preinca-andes': '南美洲', 'lapita-pacific': '大洋洲', 'ancient-iberia': '欧洲', 'nordic-prehistory': '欧洲', 'pre-roman-lowlands': '欧洲',
 }
 
 export const ancientPeriodGivenNames: Record<string, Record<string, Person[]>> = {
@@ -112,6 +115,12 @@ export const ancientPeriodGivenNames: Record<string, Record<string, Person[]>> =
     chimu: sexed(['Tacaynamo', 'Guacricaur', 'Naucempinco', 'Minchancaman', 'Chumun Caur'], []),
   },
   'lapita-pacific': { lapita: [], 'early-polynesian-settlement': [] },
+  'ancient-iberia': {
+    'iberian-pre-roman': sexed(['Viriathus', 'Indibilis', 'Mandonius', 'Culchas', 'Orison', 'Retogenes', 'Carus', 'Alucio', 'Tautalus', 'Corribilo'], []),
+    'roman-hispania': sexed(['Traianus', 'Hadrianus', 'Seneca', 'Lucan', 'Quintilian', 'Martial', 'Theodosius', 'Priscillian', 'Aemilianus', 'Maternus'], ['Etrilia', 'Helvia', 'Marcia', 'Pompeia']),
+  },
+  'nordic-prehistory': { 'nordic-bronze-age': [], 'pre-roman-nordic-iron': [] },
+  'pre-roman-lowlands': { 'iron-age-lowlands': [] },
 }
 
 export const ancientExpansionCultureIds = Object.keys(ancientCultureConfigs) as AncientExpansionCulture[]

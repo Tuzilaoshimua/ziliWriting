@@ -583,7 +583,7 @@ function chapterContainsCitation(chapter: Chapter, citation: ProjectAnswerCitati
   return exactNodeMatch || quoteMatch
 }
 
-type UtilityPanelKind = 'assistant' | 'history' | 'trash' | 'assets' | 'attachments' | 'references'
+type UtilityPanelKind = 'assistant' | 'history' | 'trash' | 'assets' | 'attachments' | 'references' | 'naming'
 type ClosingModalKind = 'library' | 'settings' | 'newProject'
 type SettingsCategory = 'appearance' | 'focus' | 'ai' | 'application'
 
@@ -757,6 +757,13 @@ type ExportReport = {
   missingResources: number
 }
 
+type ImportProgress = {
+  phase: 'running' | 'complete' | 'error'
+  current: number
+  total: number
+  message: string
+}
+
 type AiCredentialStatus = 'loading' | 'empty' | 'restored' | 'dirty' | 'saving' | 'saved' | 'memory' | 'error'
 
 const DEFAULT_PREFERENCES: WritingPreferences = {
@@ -890,6 +897,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760)
   const [sidebarClosing, setSidebarClosing] = useState(false)
   const [assistantOpen, setAssistantOpen] = useState(false)
+  const [namingOpen, setNamingOpen] = useState(false)
   const [assistantView, setAssistantView] = useState<'assistant' | 'memory' | 'qa' | 'advisor' | 'draft' | 'review' | 'tools' | 'naming'>('assistant')
   const [memoryBundle, setMemoryBundle] = useState<ChapterMemoryBundle>({ memory: null, candidates: [] })
   const [projectMemoryBundles, setProjectMemoryBundles] = useState<ChapterMemoryBundle[]>([])
@@ -1052,6 +1060,7 @@ function App() {
   const [appDialog, setAppDialog] = useState<AppDialogState>(null)
   const [appDialogClosing, setAppDialogClosing] = useState(false)
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null)
   const [cursorPosition, setCursorPosition] = useState<CursorPosition>({ paragraph: 1, character: 1, selected: 0 })
   const [selectedImage, setSelectedImage] = useState<ImageSettings | null>(null)
   const [scenePanelOpen, setScenePanelOpen] = useState(false)
@@ -1063,6 +1072,7 @@ function App() {
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error'>('idle')
   const [webStorageEstimate, setWebStorageEstimate] = useState<WebStorageEstimate | null>(null)
   const saveTimer = useRef<number | null>(null)
+  const importProgressTimer = useRef<number | null>(null)
   const importInput = useRef<HTMLInputElement | null>(null)
   const imageInput = useRef<HTMLInputElement | null>(null)
   const agentImageInput = useRef<HTMLInputElement | null>(null)
@@ -1166,7 +1176,7 @@ function App() {
   }, [project.id])
 
   useEffect(() => {
-    if (assistantView !== 'naming') return
+    if (!namingOpen) return
     let active = true
     setOfflineNamingLoading(true)
     void loadOfflineNaming().then(async (module) => {
@@ -1177,7 +1187,14 @@ function App() {
       if (active) setOfflineNamingLoading(false)
     })
     return () => { active = false }
-  }, [assistantView, project.id])
+  }, [namingOpen, project.id])
+
+  useEffect(() => {
+    if (assistantOpen && assistantView === 'naming' && !namingOpen) {
+      setAssistantOpen(false)
+      setNamingOpen(true)
+    }
+  }, [assistantOpen, assistantView, namingOpen])
 
   const queueEditorViewSave = (chapterId: string, update: Partial<StoredEditorView>) => {
     if (pendingEditorView.current && pendingEditorView.current.chapterId !== chapterId) {
@@ -3447,9 +3464,11 @@ function App() {
     if (kind === 'assets') setAssetsOpen(open)
     if (kind === 'attachments') setAttachmentsOpen(open)
     if (kind === 'references') setReferencesOpen(open)
+    if (kind === 'naming') setNamingOpen(open)
   }
 
   const closeUtilityPanel = async (kind: UtilityPanelKind) => {
+    if (kind === 'assistant' && namingOpen) kind = 'naming'
     setClosingUtilityPanel(kind)
     await waitForMotion(180)
     setUtilityPanelOpen(kind, false)
@@ -3483,6 +3502,22 @@ function App() {
 
   const animateRemoval = async (ids: string[]) => {
     setRemovingIds((current) => new Set([...current, ...ids]))
+    if (motionDuration(170) === 0) return
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+    await waitForMotion(170)
+  }
+
+  const animateChapterRemoval = async (ids: string[]) => {
+    const blocks = Array.from(document.querySelectorAll<HTMLElement>('.chapter-block[data-chapter-id]'))
+      .filter((element) => ids.includes(element.dataset.chapterId ?? ''))
+    blocks.forEach((block) => {
+      block.style.height = `${block.getBoundingClientRect().height}px`
+      block.style.overflow = 'hidden'
+    })
+    setRemovingIds((current) => new Set([...current, ...ids]))
+    if (motionDuration(170) === 0) return
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+    blocks.forEach((block) => { block.style.height = '0px' })
     await waitForMotion(170)
   }
 
@@ -4105,6 +4140,7 @@ function App() {
       setAssetsOpen(false)
       setAttachmentsOpen(false)
       setReferencesOpen(false)
+      setNamingOpen(false)
       setAssistantOpen(true)
       window.setTimeout(() => {
         const card = Array.from(document.querySelectorAll<HTMLElement>('[data-review-issue-card]'))
@@ -4289,6 +4325,7 @@ function App() {
         else if (assetsOpen) void closeUtilityPanel('assets')
         else if (attachmentsOpen) void closeUtilityPanel('attachments')
         else if (referencesOpen) void closeUtilityPanel('references')
+        else if (namingOpen) void closeUtilityPanel('naming')
         else if (focusMode) setFocusMode(false)
       }
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'f') {
@@ -4507,9 +4544,12 @@ function App() {
     for (const chapter of deferredNavigationChapters) counts.set(chapter.volumeId, (counts.get(chapter.volumeId) ?? 0) + 1)
     return counts
   }, [deferredNavigationChapters])
+  const hasProject = Boolean(project.id)
 
   const addChapter = (volumeId = activeChapter.volumeId) => {
+    if (!hasProject || !project.volumes.some((volume) => volume.id === volumeId)) return
     setProject((current) => {
+      if (!current.id || !current.volumes.some((volume) => volume.id === volumeId)) return current
       const id = crypto.randomUUID()
       const scene = createScene(id)
       const titles = current.chapters
@@ -4533,9 +4573,11 @@ function App() {
   }
 
   const addVolume = () => {
+    if (!hasProject) return
     const volumeId = crypto.randomUUID()
     const chapterId = crypto.randomUUID()
     setProject((current) => {
+      if (!current.id) return current
       const scene = createScene(chapterId)
       return {
         ...current,
@@ -4781,6 +4823,7 @@ function App() {
     setAssetsOpen(false)
     setAttachmentsOpen(false)
     setReferencesOpen(false)
+    setNamingOpen(false)
     setAssistantOpen(false)
     setHistoryOpen(true)
     setRevisions(await listRevisions(activeChapter.id))
@@ -5056,8 +5099,7 @@ function App() {
   const deleteChapter = async (chapterId: string) => {
     const chapter = project.chapters.find((item) => item.id === chapterId)
     if (!chapter || !await showConfirm(`将“${chapter.title}”移到回收站？`, { title: '删除章节', confirmLabel: '移到回收站', danger: true })) return
-    await animateRemoval([chapterId])
-    await waitForMotion(250)
+    await animateChapterRemoval([chapterId])
     const volume = project.volumes.find((item) => item.id === chapter.volumeId)
     await moveChapterToTrash(project.id, chapter, volume?.title ?? '未命名卷', project.scenes.filter((scene) => scene.chapterId === chapter.id))
     await clearAttachmentScope('chapter', chapter.id)
@@ -5080,7 +5122,6 @@ function App() {
     setProjectMemoryBundles((current) => current.filter((bundle) => bundle.memory?.chapterId !== chapterId))
     if (memoryBundle.memory?.chapterId === chapterId) setMemoryBundle({ memory: null, candidates: [] })
     setContextMenu(null)
-    finishRemoval([chapterId])
   }
 
   const closeUtilityPanels = () => {
@@ -5091,10 +5132,11 @@ function App() {
     setAssetsOpen(false)
     setAttachmentsOpen(false)
     setReferencesOpen(false)
+    setNamingOpen(false)
   }
 
   const prepareUtilityPanelOpen = (kind: UtilityPanelKind) => {
-    const switching = assistantOpen || historyOpen || trashOpen || assetsOpen || attachmentsOpen || referencesOpen
+    const switching = assistantOpen || historyOpen || trashOpen || assetsOpen || attachmentsOpen || referencesOpen || namingOpen
     if (switching) {
       setSuppressPanelEntry(kind)
     } else {
@@ -5143,6 +5185,15 @@ function App() {
     setReferenceTexts(references)
     setStyleProfile(profile)
     setStyleMessage('')
+  }
+
+  const openNaming = () => {
+    if (namingOpen) {
+      if (closingUtilityPanel !== 'naming') void closeUtilityPanel('naming')
+      return
+    }
+    setAssistantView('naming')
+    prepareUtilityPanelOpen('naming')
   }
 
   const requestImageUpload = (insertAfterUpload: boolean) => {
@@ -5548,11 +5599,50 @@ function App() {
     }
   }
 
-  const createRichImportedChapters = async (sections: ImportedSection[], fallbackTitle: string, targetProjectId = project.id, targetVolumeId = activeChapter.volumeId) => {
+  const beginImportProgress = () => {
+    if (importProgressTimer.current) window.clearTimeout(importProgressTimer.current)
+    importProgressTimer.current = null
+    setSaveState('saving')
+    setImportProgress({ phase: 'running', current: 0, total: 0, message: '正在读取导入文件…' })
+  }
+
+  const reportImportProgress = (current: number, total: number, message: string) => {
+    setImportProgress({ phase: 'running', current, total, message })
+  }
+
+  const finishImportProgress = (current: number, total: number, message = '导入完成') => {
+    setSaveState('saved')
+    setImportProgress({ phase: 'complete', current, total, message })
+    if (importProgressTimer.current) window.clearTimeout(importProgressTimer.current)
+    importProgressTimer.current = window.setTimeout(() => {
+      importProgressTimer.current = null
+      setImportProgress(null)
+    }, 2400)
+  }
+
+  const failImportProgress = (message: string) => {
+    setSaveState('error')
+    setImportProgress((current) => ({
+      phase: 'error',
+      current: current?.current ?? 0,
+      total: current?.total ?? 0,
+      message,
+    }))
+  }
+
+  const yieldImportStep = () => new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+
+  const createRichImportedChapters = async (
+    sections: ImportedSection[],
+    fallbackTitle: string,
+    targetProjectId = project.id,
+    targetVolumeId = activeChapter.volumeId,
+    onProgress?: (current: number, total: number) => void,
+  ) => {
     const createdAssets: ImageAsset[] = []
     try {
       const chapters: Chapter[] = []
-      for (const section of sections) {
+      for (const [index, section] of sections.entries()) {
         const content = await materializeImportedHtml(targetProjectId, section.html, createdAssets)
         chapters.push({
           id: crypto.randomUUID(),
@@ -5561,6 +5651,8 @@ function App() {
           ...createChapterDocument(content),
           updatedAt: Date.now(),
         })
+        onProgress?.(index + 1, sections.length)
+        await yieldImportStep()
       }
       return chapters
     } catch (error) {
@@ -5570,32 +5662,61 @@ function App() {
   }
 
   const applyImportedChapters = async (importedChapters: Chapter[], importedProject: ProjectState | null) => {
+    if (importedChapters.length === 0) throw new Error('没有可导入的章节')
     const importedScenes = createScenesForChapters(importedChapters)
     if (importedProject) {
-      const nextProject: ProjectState = {
+      let nextProject: ProjectState = {
         ...importedProject,
-        chapters: importedChapters,
-        scenes: importedScenes,
+        chapters: [importedChapters[0]],
+        scenes: [importedScenes[0]],
         activeChapterId: importedChapters[0].id,
         activeSceneId: importedScenes[0].id,
       }
-      await saveProject(project)
-      await saveProject(nextProject)
+      if (project.id) await saveProject(project)
       setProject(nextProject)
+      reportImportProgress(1, importedChapters.length, `正在导入第 1/${importedChapters.length} 章：${importedChapters[0].title}`)
+      await yieldImportStep()
+      for (let index = 1; index < importedChapters.length; index += 1) {
+        nextProject = {
+          ...nextProject,
+          chapters: [...nextProject.chapters, importedChapters[index]],
+          scenes: [...nextProject.scenes, importedScenes[index]],
+          activeChapterId: importedChapters[index].id,
+          activeSceneId: importedScenes[index].id,
+        }
+        setProject(nextProject)
+        reportImportProgress(index + 1, importedChapters.length, `正在导入第 ${index + 1}/${importedChapters.length} 章：${importedChapters[index].title}`)
+        await yieldImportStep()
+      }
+      await saveProject(nextProject)
       setSidebarOpen(window.innerWidth > 760)
       await refreshProjects()
+      finishImportProgress(importedChapters.length, importedChapters.length, `已导入 ${importedChapters.length} 章`)
       return
     }
-    setProject((current) => ({
-      ...current,
-      chapters: [...current.chapters, ...importedChapters],
-      scenes: [...current.scenes, ...importedScenes],
-      activeChapterId: importedChapters[0].id,
-      activeSceneId: importedScenes[0].id,
-    }))
+    let nextProject = project
+    for (let index = 0; index < importedChapters.length; index += 1) {
+      const chapter = importedChapters[index]
+      const scene = importedScenes[index]
+      nextProject = {
+        ...nextProject,
+        chapters: [...nextProject.chapters, chapter],
+        scenes: [...nextProject.scenes, scene],
+        activeChapterId: chapter.id,
+        activeSceneId: scene.id,
+      }
+      setProject(nextProject)
+      reportImportProgress(index + 1, importedChapters.length, `正在追加第 ${index + 1}/${importedChapters.length} 章：${chapter.title}`)
+      await yieldImportStep()
+    }
+    await saveProject(nextProject)
+    finishImportProgress(importedChapters.length, importedChapters.length, `已导入 ${importedChapters.length} 章`)
   }
 
   const importDocument = async (file: File, destination: 'append' | 'new' = 'append') => {
+    if (importProgress?.phase === 'running') return
+    beginImportProgress()
+    const importDestination = project.id ? destination : 'new'
     if (/\.zili$/i.test(file.name)) {
       try {
         const { default: JSZip } = await import('jszip')
@@ -5608,8 +5729,9 @@ function App() {
           references?: Array<{ id?: string; fileName: string; mediaType: string; path: string; rightsConfirmedAt?: number }>
           ai?: AiProjectData
         }
-        await saveProject(project)
+        if (project.id) await saveProject(project)
         const { project: imported, idMap } = parseProjectBackupWithIdMap(projectSource)
+        reportImportProgress(0, imported.chapters.length, `正在读取 ${imported.chapters.length} 个章节`)
         await saveProject(imported)
         for (const assetInfo of packageData.assets ?? []) {
           const bytes = await zip.file(assetInfo.path)?.async('uint8array')
@@ -5654,7 +5776,9 @@ function App() {
         await importAiProjectData(packageData.ai, { ...idMap, referenceIds })
         setProject(imported)
         await refreshProjects()
+        finishImportProgress(imported.chapters.length, imported.chapters.length, `已导入 ${imported.chapters.length} 章`)
       } catch (error) {
+        failImportProgress(error instanceof Error ? error.message : '工程包导入失败')
         await showAlert(error instanceof Error ? error.message : String(error || '项目备份导入失败'), '工程包导入失败')
       }
       return
@@ -5663,13 +5787,16 @@ function App() {
       try {
         const text = await file.text()
         const packageData = JSON.parse(text) as { ai?: AiProjectData }
-        await saveProject(project)
+        if (project.id) await saveProject(project)
         const { project: imported, idMap } = parseProjectBackupWithIdMap(text)
+        reportImportProgress(0, imported.chapters.length, `正在读取 ${imported.chapters.length} 个章节`)
         await saveProject(imported)
         await importAiProjectData(packageData.ai, idMap)
         setProject(imported)
         await refreshProjects()
+        finishImportProgress(imported.chapters.length, imported.chapters.length, `已导入 ${imported.chapters.length} 章`)
       } catch (error) {
+        failImportProgress(error instanceof Error ? error.message : '备份导入失败')
         await showAlert(error instanceof Error ? error.message : '备份导入失败', '备份导入失败')
       }
       return
@@ -5679,10 +5806,12 @@ function App() {
         const formats = await loadDocumentFormats()
         const sections = await formats.importDocx(await file.arrayBuffer())
         if (sections.length === 0) throw new Error('DOCX 中没有可导入的正文')
-        const importedProject = destination === 'new' ? createInitialProject(file.name.replace(/\.docx$/i, '') || '未命名作品') : null
-        const importedChapters = await createRichImportedChapters(sections, file.name.replace(/\.docx$/i, ''), importedProject?.id, importedProject?.volumes[0].id)
+        reportImportProgress(0, sections.length, `正在解析 ${sections.length} 个章节`)
+        const importedProject = importDestination === 'new' ? createInitialProject(file.name.replace(/\.docx$/i, '') || '未命名作品') : null
+        const importedChapters = await createRichImportedChapters(sections, file.name.replace(/\.docx$/i, ''), importedProject?.id, importedProject?.volumes[0].id, (current, total) => reportImportProgress(current, total, `正在准备第 ${current}/${total} 章`))
         await applyImportedChapters(importedChapters, importedProject)
       } catch (error) {
+        failImportProgress(error instanceof Error ? error.message : 'DOCX 导入失败')
         await showAlert(error instanceof Error ? error.message : 'DOCX 导入失败', 'DOCX 导入失败')
       }
       return
@@ -5691,15 +5820,18 @@ function App() {
       try {
         const formats = await loadDocumentFormats()
         const sections = await formats.importEpub(await file.arrayBuffer())
-        const importedProject = destination === 'new' ? createInitialProject(file.name.replace(/\.epub$/i, '') || '未命名作品') : null
-        const importedChapters = await createRichImportedChapters(sections, file.name.replace(/\.epub$/i, ''), importedProject?.id, importedProject?.volumes[0].id)
+        reportImportProgress(0, sections.length, `正在解析 ${sections.length} 个章节`)
+        const importedProject = importDestination === 'new' ? createInitialProject(file.name.replace(/\.epub$/i, '') || '未命名作品') : null
+        const importedChapters = await createRichImportedChapters(sections, file.name.replace(/\.epub$/i, ''), importedProject?.id, importedProject?.volumes[0].id, (current, total) => reportImportProgress(current, total, `正在准备第 ${current}/${total} 章`))
         await applyImportedChapters(importedChapters, importedProject)
       } catch (error) {
+        failImportProgress(error instanceof Error ? error.message : 'EPUB 导入失败')
         await showAlert(error instanceof Error ? error.message : 'EPUB 导入失败', 'EPUB 导入失败')
       }
       return
     }
-    const text = await file.text()
+    try {
+      const text = await file.text()
     const currentVolumeTitles = project.chapters
       .filter((chapter) => chapter.volumeId === activeChapter.volumeId)
       .map((chapter) => chapter.title)
@@ -5714,10 +5846,15 @@ function App() {
       )
       headingMode = splitByTitle ? 'title-only' : 'single'
     }
-    const importedProject = destination === 'new' ? createInitialProject(file.name.replace(/\.(txt|md)$/i, '') || '未命名作品') : null
+    const importedProject = importDestination === 'new' ? createInitialProject(file.name.replace(/\.(txt|md)$/i, '') || '未命名作品') : null
     const importedChapters = splitImportedText(text, title, importedProject?.volumes[0].id ?? activeChapter.volumeId, headingMode)
+    reportImportProgress(0, importedChapters.length, `已识别 ${importedChapters.length} 个章节，准备导入`)
     await applyImportedChapters(importedChapters, importedProject)
-    setSidebarOpen(window.innerWidth > 760)
+      setSidebarOpen(window.innerWidth > 760)
+    } catch (error) {
+      failImportProgress(error instanceof Error ? error.message : '文本导入失败')
+      await showAlert(error instanceof Error ? error.message : '文本导入失败', '文本导入失败')
+    }
   }
 
   const chapterNavigation = useMemo(() => {
@@ -5736,15 +5873,15 @@ function App() {
             volumes: current.volumes.map((item) => item.id === volume.id ? { ...item, title: event.target.value } : item),
           }))} />
           <span className="volume-count">{chapterCountByVolume.get(volume.id) ?? 0}</span>
-          <button className="icon-button small" onClick={() => addChapter(volume.id)} title={`在${volume.title}中新建章节`}><Plus size={15} /></button>
+          <button className="icon-button small" disabled={!hasProject} onClick={() => addChapter(volume.id)} title={`在${volume.title}中新建章节`}><Plus size={15} /></button>
           <button className="icon-button small danger-icon" disabled={project.volumes.length <= 1} onClick={() => setPendingVolumeDeleteId(volume.id)} title="删除卷"><Trash2 size={14} /></button>
         </div>
         <div className={`volume-chapters ${collapsedVolumes.has(volume.id) ? 'is-collapsed' : ''}`}>
           <div>
             {!unmountedCollapsedVolumes.has(volume.id) && (filteredChaptersByVolume.get(volume.id) ?? []).map((chapter) => {
               const projectIndex = chapterIndexById.get(chapter.id) ?? 0
-              return <div className={`chapter-block ${chapter.id === project.activeChapterId ? 'is-active' : ''} ${removingIds.has(chapter.id) ? 'is-removing' : ''}`} key={chapter.id}>
-                <div className={`chapter-row ${removingIds.has(chapter.id) ? 'is-removing' : ''}`} onContextMenu={(event) => {
+              return <div className={`chapter-block ${chapter.id === project.activeChapterId ? 'is-active' : ''} ${removingIds.has(chapter.id) ? 'is-removing' : ''}`} data-chapter-id={chapter.id} key={chapter.id}>
+                <div className="chapter-row" onContextMenu={(event) => {
                   event.preventDefault(); event.stopPropagation()
                   setContextMenu({ kind: 'chapter', id: chapter.id, x: event.clientX, y: event.clientY })
                 }}>
@@ -5776,18 +5913,18 @@ function App() {
         </div>
       </section>
     ))
-  }, [chapterCountByVolume, chapterIndexById, collapsedVolumes, deferredNavigationChapters, filteredChaptersByVolume, historyOpen, preferences.motionEnabled, project.activeChapterId, project.activeSceneId, project.scenes, project.volumes, removingIds, sidebarOpen, unmountedCollapsedVolumes])
+  }, [chapterCountByVolume, chapterIndexById, collapsedVolumes, deferredNavigationChapters, filteredChaptersByVolume, hasProject, historyOpen, preferences.motionEnabled, project.activeChapterId, project.activeSceneId, project.scenes, project.volumes, removingIds, sidebarOpen, unmountedCollapsedVolumes])
 
   return (
-    <main
-      className={`app-shell theme-${preferences.theme} ${preferences.uiTextColor ? 'has-custom-ui-text' : ''} ${focusMode ? 'is-focus' : ''} ${focusMode && preferences.paragraphFocus ? 'is-paragraph-focus' : ''} font-${preferences.fontFamily} ${preferences.motionEnabled ? 'motion-enabled' : 'motion-disabled'} ${!sidebarOpen && !assistantOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen ? 'is-wide-editor' : ''}`}
+      <main
+      className={`app-shell theme-${preferences.theme} ${preferences.uiTextColor ? 'has-custom-ui-text' : ''} ${focusMode ? 'is-focus' : ''} ${focusMode && preferences.paragraphFocus ? 'is-paragraph-focus' : ''} font-${preferences.fontFamily} ${preferences.motionEnabled ? 'motion-enabled' : 'motion-disabled'} ${!sidebarOpen && !assistantOpen && !namingOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen ? 'is-wide-editor' : ''}`}
       style={{
         ...createUiTypographyVariables(preferences.uiFontSize),
         ...(preferences.uiTextColor ? { '--ui-text-color': preferences.uiTextColor } : {}),
         '--editor-font-size': `${preferences.fontSize}px`,
         '--editor-line-height': preferences.lineHeight,
         '--editor-width': `${preferences.pageWidth}px`,
-        '--content-center-offset': `${(sidebarOpen ? 121 : 0) - (assistantOpen || historyOpen || trashOpen || assetsOpen || attachmentsOpen || referencesOpen ? 165 : 0)}px`,
+        '--content-center-offset': `${(sidebarOpen ? 121 : 0) - (assistantOpen || namingOpen || historyOpen || trashOpen || assetsOpen || attachmentsOpen || referencesOpen ? 165 : 0)}px`,
       } as CSSProperties}
       onContextMenu={(event) => {
         const target = event.target
@@ -5834,12 +5971,13 @@ function App() {
                 const file = event.target.files?.[0]
                 if (file) {
                   if (/\.zili(?:\.json)?$/i.test(file.name)) void importDocument(file)
+                  else if (!hasProject) void importDocument(file, 'new')
                   else setPendingDocumentImport(file)
                 }
                 event.target.value = ''
               }}
             />
-            <button className="icon-button" title="导入 TXT 或 Markdown" aria-label="导入" onClick={() => importInput.current?.click()}>
+            <button className="icon-button" disabled={importProgress?.phase === 'running'} title="导入 TXT 或 Markdown" aria-label="导入" onClick={() => importInput.current?.click()}>
               <Import size={18} />
             </button>
             <button className="icon-button" title="导出文档" aria-label="导出" onClick={() => void openExportDialog()}>
@@ -5874,7 +6012,7 @@ function App() {
                 <button className="icon-button small" onClick={() => setSearchOpen((value) => !value)} title="搜索章节">
                   <Search size={16} />
                 </button>
-                <button className="icon-button small" onClick={addVolume} title="新建卷">
+                <button className="icon-button small" disabled={!hasProject} onClick={addVolume} title="新建卷">
                   <FolderPlus size={16} />
                 </button>
               </div>
@@ -5896,6 +6034,10 @@ function App() {
             }}>
               <BookOpenText size={17} />
               <span><strong>故事记忆</strong><small>整理人物、设定和剧情</small></span>
+            </button>
+            <button className={`trash-entry ${namingOpen ? 'active' : ''}`} aria-pressed={namingOpen} onClick={openNaming}>
+              <Dices size={16} />
+              <span>文化取名</span>
             </button>
             <button className={`trash-entry ${trashOpen ? 'active' : ''}`} aria-pressed={trashOpen} onClick={() => void openTrash()}>
               <Trash2 size={16} />
@@ -6106,11 +6248,21 @@ function App() {
 
           {!focusMode && (
             <nav className="mobile-tool-dock" aria-label="写作工具">
+              <button className={namingOpen ? 'active' : ''} aria-pressed={namingOpen} onClick={openNaming} title="文化取名"><Dices size={17} /><span>取名</span></button>
               <button aria-pressed={sidebarOpen} onClick={() => void toggleSidebar()} title="章节"><Menu size={17} /><span>章节</span></button>
               <button className={assetsOpen ? 'active' : ''} aria-pressed={assetsOpen} onClick={() => void openAssets()} title="图片"><Images size={17} /><span>图片</span></button>
               <button className={attachmentsOpen ? 'active' : ''} aria-pressed={attachmentsOpen} onClick={() => void openAttachments()} title="资料"><Paperclip size={17} /><span>资料</span></button>
               <button className={referencesOpen ? 'active' : ''} aria-pressed={referencesOpen} onClick={() => void openReferences()} title="参考"><BookOpenText size={17} /><span>参考</span></button>
             </nav>
+          )}
+
+          {importProgress && (
+            <div className={`import-progress ${importProgress.phase}`} role="status" aria-live="polite">
+              {importProgress.phase === 'running' ? <RefreshCw size={13} /> : importProgress.phase === 'complete' ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+              <span>{importProgress.message}</span>
+              {importProgress.total > 0 && <strong>{Math.min(importProgress.current, importProgress.total)}/{importProgress.total}</strong>}
+              {importProgress.phase === 'running' && importProgress.total > 0 && <i><b style={{ width: `${Math.max(0, Math.min(1, importProgress.current / importProgress.total)) * 100}%` }} /></i>}
+            </div>
           )}
 
           <footer className={`statusbar ${focusMode ? 'focus-statusbar' : ''}`}>
@@ -6191,7 +6343,7 @@ function App() {
             }}
           />
 
-          {!focusMode && !assistantOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen && (
+          {!focusMode && !assistantOpen && !namingOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen && (
             <button className="assistant-trigger" aria-label="字里助手" onClick={openAgentAssistant}>
               <Sparkles size={17} />
               <span>字里助手</span>
@@ -6224,15 +6376,14 @@ function App() {
           )}
         </section>
 
-        {assistantOpen && (
-          <aside className={`assistant-panel ${focusMode ? 'focus-overlay' : ''} ${closingUtilityPanel === 'assistant' ? 'is-closing' : ''}`}>
+        {(assistantOpen || namingOpen) && (
+          <aside className={`assistant-panel ${namingOpen ? 'naming-panel' : ''} ${focusMode ? 'focus-overlay' : ''} ${closingUtilityPanel === 'assistant' || closingUtilityPanel === 'naming' ? 'is-closing' : ''}`}>
             <div className="assistant-header">
               <div>{assistantView === 'memory' ? <BookOpenText size={17} /> : assistantView === 'qa' ? <MessageSquareText size={17} /> : assistantView === 'draft' ? <Pencil size={17} /> : assistantView === 'review' ? <CheckCircle2 size={17} /> : assistantView === 'tools' ? <ListTree size={17} /> : assistantView === 'naming' ? <Dices size={17} /> : <Sparkles size={17} />}<strong>{assistantView === 'memory' ? '故事记忆' : assistantView === 'qa' ? '询问作品' : assistantView === 'advisor' ? '创作顾问' : assistantView === 'draft' ? '候选文本' : assistantView === 'review' ? '审稿中心' : assistantView === 'tools' ? '创作工具' : assistantView === 'naming' ? '文化取名' : '字里助手'}</strong></div>
               <div className="assistant-header-actions">
                 {assistantView === 'memory' && <button className="icon-button small" onClick={() => { captureAgentSelection(); setAssistantView('assistant') }} title="转到字里助手，后台分析会继续"><Sparkles size={16} /></button>}
                 {assistantView === 'assistant' && <button className="icon-button small" onClick={() => { setAssistantView('memory'); setMemoryScope('chapter'); setMemoryFilter('candidate') }} title="查看故事记忆，Agent 对话会继续"><BookOpenText size={16} /></button>}
-                {assistantView === 'assistant' && <button className="icon-button small" onClick={() => setAssistantView('naming')} title="文化取名，不调用 AI"><Dices size={16} /></button>}
-                <button className="icon-button small" onClick={() => void closeUtilityPanel('assistant')} title="关闭面板，后台 AI 任务会继续"><X size={17} /></button>
+                <button className="icon-button small" onClick={() => void closeUtilityPanel('assistant')} title={namingOpen ? '关闭文化取名' : '关闭面板，后台 AI 任务会继续'}><X size={17} /></button>
               </div>
             </div>
             {assistantView !== 'naming' && <div className="assistant-context">
@@ -7323,7 +7474,7 @@ function App() {
             </>}
             {volume && <>
               <button onClick={() => { toggleVolume(volume.id); setContextMenu(null) }}>{collapsedVolumes.has(volume.id) ? <ChevronRight size={15} /> : <ChevronDown size={15} />}{collapsedVolumes.has(volume.id) ? '展开卷' : '折叠卷'}</button>
-              <button onClick={() => { addChapter(volume.id); setContextMenu(null) }}><Plus size={15} />新建章节</button>
+              <button disabled={!hasProject} onClick={() => { addChapter(volume.id); setContextMenu(null) }}><Plus size={15} />新建章节</button>
               <button className="danger" disabled={project.volumes.length <= 1} onClick={() => { setPendingVolumeDeleteId(volume.id); setContextMenu(null) }}><Trash2 size={15} />删除卷</button>
             </>}
             {storedProject && <>

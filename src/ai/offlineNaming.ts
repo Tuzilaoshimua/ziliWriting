@@ -5350,6 +5350,17 @@ function orderCatalogEntries(entries: CatalogSourceEntry[], mode: OfflineCatalog
   return ordered
 }
 function periodFor(config: CultureConfig, id: string) { return config.periods.find((period) => period.id === id) ?? config.periods[config.periods.length - 1] }
+function cleanPeriodDisplayLabel(label: string) {
+  return label.replace(/（([^（）]*)）/g, (full, inner: string) => {
+    const hasDate = /(?:前|公元|\d+年|\d+世纪)/.test(inner)
+    if (hasDate && /[，；;]/.test(inner)) return `（${inner.split(/[，；;]/)[0].trim()}）`
+    if (!hasDate && /(?:考古|参照|资料|传说|文献|铭文|史书)/.test(inner)) return ''
+    return full
+  })
+}
+function cleanCultureDisplayLabel(label: string) {
+  return label.replace(/资料包|通用参考/g, '').replace(/（\s*）/g, '').trim()
+}
 function titleMeaning(name: string) { return `按“${name}”的文化姓名资料生成；具体含义与家族、时代和人物设定有关` }
 function catalogMeaning(name: string, kind: OfflineNameKind) {
   const labels: Record<OfflineNameKind, string> = { character: '人物', location: '地点', organization: '组织', item: '物品' }
@@ -5361,7 +5372,12 @@ const hiddenMergedCultureIds = new Set(['prehistoric-japan', 'early-korea'])
 export function getOfflineCultures() {
   return Object.entries(cultures)
     .filter(([id]) => !hiddenMergedCultureIds.has(id))
-    .map(([id, config]) => ({ id: id as OfflineCulture, label: config.label, region: cultureRegions[id as OfflineCulture], periods: config.periods }))
+    .map(([id, config]) => ({
+      id: id as OfflineCulture,
+      label: cleanCultureDisplayLabel(config.label),
+      region: cultureRegions[id as OfflineCulture],
+      periods: config.periods.map((period) => ({ ...period, label: cleanPeriodDisplayLabel(period.label) })),
+    }))
 }
 
 const russianPatronymics: Record<string, { male: string; female: string }> = {
@@ -5713,7 +5729,7 @@ export function generateOfflineNames(options: OfflineNameOptions): OfflineNameCa
     const displayName = options.kind === 'character' ? rawDisplayName : rawDisplayName.replace(/·/g, '')
     if (excluded.has(nativeName) || excluded.has(displayName) || results.some((item) => item.name === displayName || item.nativeName === nativeName)) continue
     const meaning = options.kind === 'character' ? built.item.meaning ?? titleMeaning(nativeName) : catalogMeaning(displayName, options.kind)
-    results.push({ id: crypto.randomUUID(), name: displayName, nativeName, kind: options.kind, culture: options.culture, cultureLabel: config.label, period: period.id, periodLabel: period.label, gender: options.gender ?? 'any', meaning, pattern: built.pattern, ...(built.reading ? { reading: built.reading } : {}), components: built.components, sourceClass: catalogMode === 'fictional' ? 'controlled' : (built as { sourceClass?: OfflineNameCandidate['sourceClass'] }).sourceClass ?? (period.id === 'modern' ? 'modern' : config.sourceClass), createdAt: Date.now() })
+    results.push({ id: crypto.randomUUID(), name: displayName, nativeName, kind: options.kind, culture: options.culture, cultureLabel: cleanCultureDisplayLabel(config.label), period: period.id, periodLabel: cleanPeriodDisplayLabel(period.label), gender: options.gender ?? 'any', meaning, pattern: built.pattern, ...(built.reading ? { reading: built.reading } : {}), components: built.components, sourceClass: catalogMode === 'fictional' ? 'controlled' : (built as { sourceClass?: OfflineNameCandidate['sourceClass'] }).sourceClass ?? (period.id === 'modern' ? 'modern' : config.sourceClass), createdAt: Date.now() })
     if (results.length === count) break
   }
   return results
@@ -5726,10 +5742,11 @@ export async function loadOfflineNameCandidates(projectId: string): Promise<Offl
     const items = await webGet<OfflineNameCandidate[]>('offlineNames', projectId) ?? []
     if (!Array.isArray(items)) return []
     const normalized = items.slice(0, 200).filter((item) => item.sourceClass !== 'regional' && !['japanese', 'korean', 'iberian', 'norse', 'icelandic', 'ancient-greek', 'ancient-rome', 'egyptian', 'celtic', 'slavic-east', 'dutch-lowlands', 'roman-low-countries', 'early-slavic', 'mongolian', 'tibetan', 'manchu'].includes(item.culture)).map((item) => {
-      if (item.kind === 'character' || (!/[A-Za-z]/.test(item.name) && !item.name.includes('·'))) return item
+      const displayLabels = { ...item, cultureLabel: cleanCultureDisplayLabel(item.cultureLabel), periodLabel: cleanPeriodDisplayLabel(item.periodLabel) }
+      if (item.kind === 'character' || (!/[A-Za-z]/.test(item.name) && !item.name.includes('·'))) return displayLabels
       const name = localizeCatalogName(item.nativeName || item.name, item.culture)
       const meaning = /[A-Za-z]/.test(item.meaning || '') ? catalogMeaning(name, item.kind) : item.meaning
-      return { ...item, name, meaning }
+      return { ...displayLabels, name, meaning }
     })
     if (JSON.stringify(normalized) !== JSON.stringify(items.slice(0, 200))) await webPut('offlineNames', projectId, normalized, { projectId, updatedAt: Date.now() })
     return normalized

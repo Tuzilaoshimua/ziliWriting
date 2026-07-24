@@ -32,8 +32,10 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
-      "endpoints": []
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUzMjAwNjZBRUYyRTFCQUYKUldTdkd5N3ZhZ1lnVXg5V1g3ZnNwOWVQVzZ2TEprcnkvdFYybDhoS3Bhb1crMndHcHZEM0tQWXIK",
+      "endpoints": [
+        "https://github.com/Tuzilaoshimua/ziliWriting/releases/latest/download/latest.json"
+      ]
     },
     "sql": {
       "preload": ["sqlite:zili.db"]
@@ -41,6 +43,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "nsis",
     "icon": [
       "icons/icon.ico"
