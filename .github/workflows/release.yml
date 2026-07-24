@@ -32,6 +32,7 @@ jobs:
         run: npm install
 
       - uses: tauri-apps/tauri-action@v1
+        id: tauri-action
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
@@ -43,3 +44,85 @@ jobs:
           prerelease: false
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+
+      - name: Sync release to Gitee
+        if: ${{ secrets.GITEE_TOKEN != '' }}
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: PrincessBride
+          GITEE_REPO: crafting-words
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # 找到 latest.json 和安装包文件
+          latest_json=$(find . -name "latest.json" | head -1)
+          setup_exe=$(find . -name "*-setup.exe" | head -1)
+          setup_sig=$(find . -name "*-setup.exe.sig" | head -1)
+          nsis_zip=$(find . -name "*.nsis.zip" | head -1)
+          nsis_sig=$(find . -name "*.nsis.zip.sig" | head -1)
+          
+          echo "Found files:"
+          echo "  latest.json: $latest_json"
+          echo "  setup.exe: $setup_exe"
+          echo "  setup.exe.sig: $setup_sig"
+          echo "  nsis.zip: $nsis_zip"
+          echo "  nsis.zip.sig: $nsis_sig"
+          
+          # 从 latest.json 中提取版本号作为发布名称
+          if [ -f "$latest_json" ]; then
+            version=$(cat "$latest_json" | grep -o '"version":"[^"]*"' | head -1 | sed 's/"version":"\(.*\)"/\1/')
+          else
+            version=${RELEASE_TAG#v}
+          fi
+          
+          # 创建 Gitee Release
+          release_response=$(curl -s -X POST \
+            "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"access_token\": \"$GITEE_TOKEN\",
+              \"tag_name\": \"$RELEASE_TAG\",
+              \"name\": \"字里写作 v$version\",
+              \"body\": \"请下载下方 assets 中的安装包进行安装。\",
+              \"prerelease\": false
+            }")
+          
+          release_id=$(echo "$release_response" | grep -o '"id":[0-9]*' | head -1 | sed 's/"id"://')
+          
+          if [ -z "$release_id" ]; then
+            # 如果创建失败，可能已存在，尝试获取已有的 release
+            release_response=$(curl -s "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases/tags/$RELEASE_TAG?access_token=$GITEE_TOKEN")
+            release_id=$(echo "$release_response" | grep -o '"id":[0-9]*' | head -1 | sed 's/"id"://')
+          fi
+          
+          echo "Gitee Release ID: $release_id"
+          
+          if [ -z "$release_id" ]; then
+            echo "Failed to get/create Gitee release"
+            echo "Response: $release_response"
+            exit 1
+          fi
+          
+          # 上传附件函数
+          upload_asset() {
+            local file_path="$1"
+            local file_name=$(basename "$file_path")
+            if [ -f "$file_path" ]; then
+              echo "Uploading $file_name to Gitee..."
+              curl -s -X POST \
+                "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases/$release_id/attach_files" \
+                -H "Content-Type: multipart/form-data" \
+                -F "access_token=$GITEE_TOKEN" \
+                -F "file=@$file_path" \
+                -F "name=$file_name"
+              echo "Done: $file_name"
+            fi
+          }
+          
+          # 上传所有构建产物
+          upload_asset "$latest_json"
+          upload_asset "$setup_exe"
+          upload_asset "$setup_sig"
+          upload_asset "$nsis_zip"
+          upload_asset "$nsis_sig"
+          
+          echo "Gitee sync completed!"

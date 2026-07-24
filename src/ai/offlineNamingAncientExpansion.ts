@@ -117,7 +117,7 @@ export const ancientPeriodGivenNames: Record<string, Record<string, Person[]>> =
   'lapita-pacific': { lapita: [], 'early-polynesian-settlement': [] },
   'ancient-iberia': {
     'iberian-pre-roman': sexed(['Viriathus', 'Indibilis', 'Mandonius', 'Culchas', 'Orison', 'Retogenes', 'Carus', 'Alucio', 'Tautalus', 'Corribilo'], []),
-    'roman-hispania': sexed(['Traianus', 'Hadrianus', 'Seneca', 'Lucan', 'Quintilian', 'Martial', 'Theodosius', 'Priscillian', 'Aemilianus', 'Maternus'], ['Etrilia', 'Helvia', 'Marcia', 'Pompeia']),
+    'roman-hispania': sexed(['Traianus', 'Hadrianus', 'Seneca', 'Lucan', 'Quintilian', 'Martial', 'Theodosius', 'Priscillian', 'Hydatius', 'Orosius'], []),
   },
   'nordic-prehistory': { 'nordic-bronze-age': [], 'pre-roman-nordic-iron': [] },
   'pre-roman-lowlands': { 'iron-age-lowlands': [] },
@@ -388,6 +388,37 @@ export const ancientPeriodReferenceCatalogs: Record<string, Record<string, Refer
       ['玄武岩石锛|basalt adze', '珍珠贝鱼钩|pearl-shell fishhook', '骨制鱼钩|bone fishhook', '独木舟桨|canoe paddle', '树皮布槌|barkcloth beater', '贝制胸饰|shell breast ornament', '珊瑚锉|coral file', '火山玻璃刀片|volcanic-glass blade', '椰壳容器|coconut-shell vessel', '石制烹饪炉构件|earth-oven stone'],
     ),
   },
+  'ancient-iberia': {
+    'iberian-pre-roman': reference(
+      ['塔尔特索斯|Tartessos', '加的斯|Gadir', '萨贡托|Saguntum', '努曼西亚|Numantia', '乌拉科|Ullastret', '埃尔切|Ilici', '阿尔科伊|La Serreta', '阿斯科|Azaila', '科尔多瓦山地|Sierra Morena', '瓜达尔基维尔河谷|Baetis Valley'],
+      ['塔尔特索斯王廷|Tartessian royal court', '图尔德坦城邦议会|Turdetanian civic council', '伊比利亚山丘堡共同体|Iberian hillfort community', '卢西塔尼亚战士随从团|Lusitanian warrior retinue', '凯尔特伊比利亚部族议会|Celtiberian tribal council', '加的斯海贸商人群体|Gadir maritime merchants', '银矿开采群体|silver-mining communities', '陶器工匠群体|Iberian pottery artisans', '圣所祭仪群体|sanctuary ritual community', '雇佣军交换网络|mercenary exchange network'],
+      ['伊比利亚铅板铭文|Iberian lead tablet', '加的斯腓尼基陶罐|Gadir Phoenician amphora', '银制铸币|Iberian silver coin', '战士雕像|Iberian warrior sculpture', '铁制法尔卡塔剑|falcata', '青铜镜|Iberian bronze mirror', '彩绘陶瓶|Iberian painted vessel', '金颈环|Iberian torc', '石制墓碑|Iberian funerary stele', '马具青铜饰件|Iberian horse harness fitting'],
+    ),
+    'roman-hispania': reference(
+      ['埃梅里塔·奥古斯塔|Emerita Augusta', '塔拉科|Tarraco', '科尔多瓦|Corduba', '伊塔利卡|Italica', '梅里达剧场|Emerita theatre', '卢西塔尼亚|Lusitania', '贝蒂卡|Baetica', '加的斯|Gades', '萨贡托|Saguntum', '莱昂军营|Legio camp at Leon'],
+      ['西班牙行省总督府|Hispanian provincial administration', '第七双子军团|Legio VII Gemina', '塔拉科地方议会|Tarraco civic council', '贝蒂卡元老院家族|Baetican senatorial houses', '埃梅里塔退伍军人殖民团|Emerita veteran colony', '伊比利亚矿业承包群体|Hispanian mining contractors', '罗马道路营建机构|Roman road works', '橄榄油商人同业会|olive-oil merchants collegium', '早期基督教主教团|early Christian episcopate', '庄园农场家庭机构|villa estate household'],
+      ['埃梅里塔剧场铭文|Emerita theatre inscription', '塔拉科祭坛铭文|Tarraco altar inscription', '罗马西班牙第纳尔|Hispanian denarius', '贝蒂卡橄榄油陶罐|Baetican oil amphora', '罗马道路里程碑|Roman milestone', '伊塔利卡马赛克|Italica mosaic', '青铜罗马像|Roman bronze statuette', '铅制供水管|lead water pipe', '石棺浮雕|sarcophagus relief', '军团盾牌包边|legionary shield fitting'],
+    ),
+  },
+  'nordic-prehistory': {
+    'nordic-bronze-age': reference(
+      ['博胡斯兰岩画|Bohuslan rock carvings', '特伦德拉格|Trondelag', '博鲁姆埃斯霍伊|Borum Eshoj', '鲁瑟霍伊|Lusehoj', '维特利克|Vitlycke', '坦努姆|Tanum', '奥斯陆峡湾|Oslofjord', '日德兰丘陵|Jutland uplands', '乌普兰海岸|Uppland coast', '丹麦沼泽地|Danish boglands'],
+      ['岩画营建群体|rock-art communities', '青铜铸造群体|bronze-casting communities', '船形墓葬共同体|boat-burial communities', '琥珀交换网络|amber exchange network', '沿海农牧共同体|coastal agro-pastoral communities', '沼泽祭祀群体|bog offering communities', '太阳崇拜仪式群体|solar ritual communities', '燧石工匠群体|flint-working communities', '长屋聚落共同体|longhouse settlement communities', '远程海运群体|maritime exchange communities'],
+      ['特伦德霍尔姆太阳车|Trundholm sun chariot', '青铜剃刀|Nordic bronze razor', '青铜颈环|bronze neck ring', '船形岩画|ship rock carving', '琥珀珠|amber bead', '青铜礼仪斧|bronze ceremonial axe', '青铜号角|bronze lur', '织物残片|textile fragment', '沼泽祭祀木器|bog-offering wooden object', '燧石镰刀|flint sickle'],
+    ),
+    'pre-roman-nordic-iron': reference(
+      ['日德兰铁器时代聚落|Jutland Iron Age settlement', '博恩霍尔姆|Bornholm', '哥特兰|Gotland', '厄兰岛|Oland', '斯堪的纳维亚南部|southern Scandinavia', '奥斯陆峡湾|Oslofjord', '梅拉伦湖区|Lake Malaren', '霍比贵族墓|Hoby chieftain grave', '西兰岛|Zealand', '波罗的海航路|Baltic sea route'],
+      ['早期铁冶炼群体|early ironworking communities', '沼泽献祭群体|bog-offering communities', '琥珀商路网络|amber-route network', '海湾渔猎共同体|coastal fishing communities', '农牧长屋共同体|farmstead communities', '部落集会群体|tribal assembly communities', '船匠群体|boat-building communities', '铁器交换网络|iron exchange network', '墓葬营建共同体|burial construction communities', '盐业生产群体|salt-production communities'],
+      ['早期铁制矛头|early iron spearhead', '铁制短剑|iron short sword', '沼泽祭祀盾牌|bog-offering shield', '琥珀珠串|amber bead necklace', '船板构件|boat plank fitting', '铁制镰刀|iron sickle', '青铜胸针|bronze brooch', '骨制织梳|bone weaving comb', '盐锅陶片|salt-pan pottery', '木制圆盾|wooden round shield'],
+    ),
+  },
+  'pre-roman-lowlands': {
+    'iron-age-lowlands': reference(
+      ['弗里西海岸|Frisian coast', '马斯河下游|Lower Meuse', '莱茵河下游|Lower Rhine', '德文特|Deventer', '乌得勒支丘陵|Utrechtse Heuvelrug', '泽兰岛|Zeeland', '布拉班特铁器时代遗址|Iron Age Brabant', '特里尔北部|north of Trier', '瓦尔河谷|Waal Valley', '北海潮汐沼泽|North Sea tidal marshes'],
+      ['弗里西海岸聚落共同体|Frisian coastal communities', '河口农牧共同体|estuarine agro-pastoral communities', '盐业生产群体|salt-production communities', '沼泽农耕群体|marsh farming communities', '凯尔特—弗里西交换网络|Celtic-Frisian exchange network', '莱茵河舟运群体|Lower Rhine boatmen', '铁匠工匠群体|ironworking artisans', '木栅聚落守卫群体|palisaded settlement guards', '琥珀商旅网络|amber trading network', '海岸渔猎共同体|coastal fishing communities'],
+      ['铁制短剑|iron short sword', '盐制品|salt product', '琥珀珠|amber bead', '木船构件|wooden boat fitting', '罗马前低地陶器|pre-Roman Low Countries pottery', '盾牌包边|shield binding', '铁制镰刀|iron sickle', '纺织砝码|loom weight', '骨制织梳|bone weaving comb', '青铜胸针|bronze brooch'],
+    ),
+  },
 }
 
 type FictionalMode = 'archaeological' | 'city-state' | 'kingdom' | 'tribal' | 'maritime'
@@ -520,6 +551,17 @@ const ancientFictionalSeeds: Record<string, Record<string, FictionalSeed>> = {
     lapita: [['齿印陶', '黑曜石', '贝环', '双舟', '礁湖', '季风', '珊瑚', '树皮布', '岛链', '海星'], ['齿印陶罐', '黑曜石刀片', '贝制手镯', '石锛', '贝制鱼钩', '陶制坠饰', '独木舟桨', '树皮布槌', '磨制石器', '贝壳珠串'], 'maritime'],
     'early-polynesian-settlement': [['玄武岩', '双体舟', '珍珠贝', '椰林', '海鸟', '火山岛', '珊瑚', '树皮布', '星航', '礁湖'], ['玄武岩石锛', '珍珠贝鱼钩', '骨制鱼钩', '独木舟桨', '树皮布槌', '贝制胸饰', '珊瑚锉', '火山玻璃刀片', '椰壳容器', '地炉石'], 'maritime'],
   },
+  'ancient-iberia': {
+    'iberian-pre-roman': [['银山', '红土', '海岬', '橄榄林', '战车', '白鹿', '河谷', '石门', '圣所', '海潮'], ['伊比利亚铅板', '法尔卡塔剑', '彩绘陶瓶', '银制铸币', '青铜镜', '金颈环', '石制墓碑', '马具饰件', '双耳酒罐', '铁制矛头'], 'tribal'],
+    'roman-hispania': [['月桂', '石路', '军旗', '橄榄', '银矿', '剧场', '葡萄', '海港', '白石', '鹰徽'], ['罗马道路里程碑', '贝蒂卡油罐', '军团盾牌', '塔拉科祭坛', '伊塔利卡马赛克', '青铜罗马像', '铅制水管', '第纳尔', '石棺浮雕', '羊皮文书'], 'kingdom'],
+  },
+  'nordic-prehistory': {
+    'nordic-bronze-age': [['太阳车', '琥珀', '船纹', '沼泽', '青铜', '长屋', '海湾', '岩画', '白桦', '燧石'], ['青铜太阳车', '青铜剃刀', '青铜颈环', '船形岩画', '琥珀珠', '青铜礼仪斧', '青铜号角', '织物残片', '沼泽祭祀木器', '燧石镰刀'], 'archaeological'],
+    'pre-roman-nordic-iron': [['铁炉', '琥珀', '海湾', '沼祭', '木舟', '盐滩', '黑林', '长屋', '岩岸', '北风'], ['早期铁制矛头', '铁制短剑', '沼泽祭祀盾牌', '琥珀珠串', '船板构件', '铁制镰刀', '青铜胸针', '骨制织梳', '盐锅陶片', '木制圆盾'], 'archaeological'],
+  },
+  'pre-roman-lowlands': {
+    'iron-age-lowlands': [['河口', '盐滩', '芦苇', '潮汐', '木栅', '琥珀', '海舟', '沼田', '莱茵', '白雾'], ['铁制短剑', '盐制品', '琥珀珠', '木船构件', '低地陶器', '盾牌包边', '铁制镰刀', '纺织砝码', '骨制织梳', '青铜胸针'], 'archaeological'],
+  },
 }
 
 export const ancientPeriodFictionalProfiles: Record<string, Record<string, FictionalProfile>> = Object.fromEntries(
@@ -565,4 +607,6 @@ export const ancientLocalizedNames: Record<string, string> = {
   Apollodotus: '阿波罗多托斯', Menander: '米南德', Antialcidas: '安提阿尔基达斯', Agathocles: '阿伽托克利斯', Pantaleon: '潘塔利翁', Strato: '斯特拉托', Amyntas: '阿明塔斯', Hermaeus: '赫尔迈奥斯', Calliope: '卡利俄珀', Berenike: '贝勒尼基',
   'Kujula Kadphises': '丘就却', 'Vima Takto': '韦玛·塔克图', 'Vima Kadphises': '阎膏珍', Kanishka: '迦腻色迦', Huvishka: '胡毗色伽', Vasudeva: '波调', Kipunada: '基普纳达',
   Tacaynamo: '塔凯纳莫', Guacricaur: '瓜克里考尔', Naucempinco: '瑙森平科', Minchancaman: '明昌卡曼', 'Chumun Caur': '楚蒙考尔',
+  Viriathus: '维里阿图斯', Indibilis: '因迪比利斯', Mandonius: '曼多尼乌斯', Culchas: '库尔卡斯', Orison: '奥里松', Retogenes: '雷托革涅斯', Carus: '卡鲁斯', Alucio: '阿卢基奥', Tautalus: '陶塔卢斯', Corribilo: '科里比洛',
+  Traianus: '图拉真', Hadrianus: '哈德良', Seneca: '塞涅卡', Lucan: '卢坎', Quintilian: '昆体良', Martial: '马提亚尔', Theodosius: '狄奥多西', Priscillian: '普里西利安', Hydatius: '伊达修斯', Orosius: '奥罗修斯',
 }
