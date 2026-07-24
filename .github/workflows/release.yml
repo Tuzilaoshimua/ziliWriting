@@ -46,13 +46,17 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Sync release to Gitee
-        if: ${{ secrets.GITEE_TOKEN != '' }}
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_OWNER: PrincessBride
           GITEE_REPO: crafting-words
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "GITEE_TOKEN not set, skipping Gitee sync"
+            exit 0
+          fi
+
           # 找到 latest.json 和安装包文件
           latest_json=$(find . -name "latest.json" | head -1)
           setup_exe=$(find . -name "*-setup.exe" | head -1)
@@ -99,7 +103,7 @@ jobs:
           if [ -z "$release_id" ]; then
             echo "Failed to get/create Gitee release"
             echo "Response: $release_response"
-            exit 1
+            exit 0
           fi
           
           # 上传附件函数
