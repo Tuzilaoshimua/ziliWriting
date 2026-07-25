@@ -269,6 +269,38 @@ fn read_reference_text(
   std::fs::read(path).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn save_project_backup(directory: String, file_name: String, bytes: Vec<u8>) -> Result<String, String> {
+  let directory = directory.trim();
+  if directory.is_empty() {
+    return Err("save directory is empty".into());
+  }
+  if bytes.is_empty() || bytes.len() > 500 * 1024 * 1024 {
+    return Err("backup size must be between 1 byte and 500 MB".into());
+  }
+  let name = std::path::Path::new(file_name.trim())
+    .file_name()
+    .and_then(|value| value.to_str())
+    .filter(|value| !value.is_empty() && value.to_ascii_lowercase().ends_with(".zili"))
+    .ok_or_else(|| "invalid backup file name".to_string())?;
+  let safe_name: String = name
+    .chars()
+    .map(|character| {
+      if character.is_control() || matches!(character, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+        '_'
+      } else {
+        character
+      }
+    })
+    .collect();
+  let path = std::path::Path::new(directory).join(safe_name);
+  if let Some(parent) = path.parent() {
+    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+  }
+  std::fs::write(&path, bytes).map_err(|error| error.to_string())?;
+  Ok(path.to_string_lossy().into_owned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   use tauri_plugin_sql::{Migration, MigrationKind};
@@ -818,6 +850,7 @@ pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_clipboard_manager::init())
+    .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_process::init())
     .plugin(tauri_plugin_updater::Builder::new().build())
     .invoke_handler(tauri::generate_handler![
@@ -835,6 +868,7 @@ pub fn run() {
       delete_ai_api_key,
       save_ai_settings,
       load_ai_settings,
+      save_project_backup,
     ])
     .plugin(
       tauri_plugin_sql::Builder::default()

@@ -96,7 +96,8 @@ button { color: inherit; }
 .chapter-copy small { color: #8d8d87; font-size: var(--ui-font-10, 10px); }
 .chapter-menu-trigger { position: absolute; top: 11px; right: 5px; width: 30px; height: 30px; border: 0; border-radius: 5px; background: transparent; display: grid; place-items: center; opacity: 0; cursor: pointer; color: #73746f; }
 .chapter-row:hover .chapter-menu-trigger, .chapter-menu-trigger:focus-visible { opacity: 1; }
-.scene-list { margin: 2px 8px 8px 31px; padding-left: 8px; border-left: 1px solid #dfe2de; }
+.scene-list { max-height: 640px; margin: 2px 8px 8px 31px; padding-left: 8px; border-left: 1px solid #dfe2de; overflow: hidden; opacity: 1; transition: max-height .24s ease, margin .24s ease, padding .24s ease, border-color .18s ease, opacity .18s ease; }
+.scene-list.is-collapsed { max-height: 0; margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; border-left-color: transparent; opacity: 0; pointer-events: none; }
 .scene-list-heading { height: 25px; display: flex; align-items: center; justify-content: space-between; padding-left: 7px; color: #969a95; font-size: var(--ui-font-9, 9px); }
 .scene-list-heading .icon-button { opacity: 0; }
 .scene-list:hover .scene-list-heading .icon-button, .scene-list-heading .icon-button:focus-visible { opacity: 1; }
@@ -138,10 +139,10 @@ button { color: inherit; }
 .writing-area { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; background: #f7f6f3; }
 .editor-toolbar { position: relative; height: 49px; flex: 0 0 49px; display: grid; grid-template-columns: 80px 1fr 230px; align-items: center; padding: 0 15px; border-bottom: 1px solid #e5e4df; }
 .chapter-title-wrap { position: fixed; z-index: 5; top: 52px; left: calc(50% + var(--content-center-offset, 0px)); height: 49px; transform: translateX(-50%); display: flex; align-items: center; }
-.chapter-title { width: min(360px, 40vw); border: 0; outline: 0; background: transparent; text-align: center; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; font-size: var(--ui-font-13, 13px); font-weight: 650; }
+.chapter-title { width: min(360px, 40vw); height: 32px; box-sizing: border-box; transform: translateY(-8px); border: 0; outline: 0; background: transparent; text-align: center; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; padding: 0; line-height: 32px; font-size: var(--ui-font-13, 13px); font-weight: 650; }
 .focus-button { justify-self: end; height: 32px; border: 1px solid #d8d8d3; border-radius: 6px; background: #fbfbf9; padding: 0 10px; display: flex; align-items: center; gap: 6px; font-size: var(--ui-font-12, 12px); cursor: pointer; }
 .focus-button:hover { border-color: #b9c6c0; background: #f0f4f1; }
-.editor-actions { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 3px; }
+.editor-actions { position: relative; z-index: 6; grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 3px; }
 .scene-planning-panel { min-height: 96px; max-height: 230px; flex: 0 0 auto; display: grid; grid-template-columns: 160px minmax(190px, 1fr) 28px; align-items: center; gap: 7px 12px; padding: 8px 14px; border-bottom: 1px solid #e2e3df; background: #f3f4f1; overflow: hidden; }
 .scene-planning-panel.is-closing { min-height: 0; max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; transform: translateY(-5px); border-bottom-width: 0; }
 .scene-planning-title { min-width: 0; height: 32px; display: flex; align-items: center; gap: 7px; color: var(--accent-strong); }
@@ -1137,6 +1138,7 @@ button { color: inherit; }
 .setting-row > span { display: flex; flex-direction: column; gap: 5px; }
 .setting-row strong { font-size: var(--ui-font-12, 12px); }
 .setting-row small { color: #92928c; font-size: var(--ui-font-10, 10px); }
+.project-path-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .setting-row input[type="range"] { width: 100%; accent-color: #49685e; }
 .ui-text-color-control { min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 9px; }
 .ui-text-color-control input[type="color"] { width: 36px; height: 32px; border: 1px solid #cfd4d0; border-radius: 5px; background: transparent; padding: 3px; cursor: pointer; }
@@ -1160,6 +1162,9 @@ button { color: inherit; }
 .update-setting-control { display: flex; justify-content: flex-end; }
 .update-setting-control button { height: 32px; border: 1px solid #cbd5d0; border-radius: 6px; background: #f4f8f5; color: var(--accent-strong); padding: 0 11px; font-size: var(--ui-font-10, 10px); font-weight: 650; cursor: pointer; }
 .update-setting-control button:disabled { opacity: .48; cursor: default; }
+.project-path-control { gap: 6px; align-items: center; }
+.project-path-control button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.project-path-control .clear-path { border-color: #d7c2bb; background: #fbf4f1; color: #9a5546; }
 .segmented-control { height: 34px; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 3px; border: 1px solid #d8d8d3; border-radius: 6px; background: #eeeeea; }
 .segmented-control button { min-width: 0; border: 0; border-radius: 4px; background: transparent; font-size: var(--ui-font-11, 11px); cursor: pointer; }
 .segmented-control button.active { background: #fff; color: var(--accent-strong); font-weight: 650; box-shadow: 0 1px 3px rgba(30, 35, 33, .1); }
@@ -2059,4 +2064,1247 @@ button { color: inherit; }
 .empty-project-overlay span {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* ===== 纸张主题色彩系统 =====
+   纸张主题使用独立的材质与墨色，不复用明亮/深色主题的灰绿色阶。 */
+.app-shell.theme-paper {
+  --paper-canvas: #eee8dc;
+  --paper-surface: #f5f0e6;
+  --paper-surface-raised: #fbf7ef;
+  --paper-sidebar: #e2dacb;
+  --paper-sidebar-alt: #d8cebd;
+  --paper-hover: #e8dece;
+  --paper-selected: #dfccb4;
+  --paper-border: #cfc2ae;
+  --paper-border-strong: #b8a589;
+  --paper-ink: #302b25;
+  --paper-ink-muted: #776d60;
+  --paper-ink-faint: #9b9184;
+  --paper-accent: #8a5a3b;
+  --paper-accent-strong: #6e4028;
+  --paper-accent-soft: #ead8c4;
+  --paper-success: #876546;
+  --paper-success-soft: #eee1cd;
+  --paper-warning: #966e39;
+  --paper-warning-soft: #eee0c7;
+  --paper-danger: #9a5148;
+  --paper-danger-soft: #efd8d2;
+  --paper-shadow: rgba(73, 54, 35, .16);
+  --paper-texture-overlay: rgba(238, 232, 220, .70);
+  --accent-strong: var(--paper-accent-strong);
+  --accent-muted: var(--paper-accent);
+  --paper: var(--paper-canvas);
+  --text: var(--paper-ink);
+  --text-muted: var(--paper-ink-muted);
+  --scrollbar-track: #e2dacb;
+  --scrollbar-thumb: #b9aa93;
+  --scrollbar-thumb-hover: #9b896f;
+  color: var(--paper-ink);
+  background-color: var(--paper-canvas);
+}
+
+.theme-paper .topbar,
+.theme-paper .writing-area,
+.theme-paper .paper,
+.theme-paper .startup-screen,
+.theme-paper .empty-project-overlay {
+  background-color: var(--paper-canvas);
+  color: var(--paper-ink);
+}
+
+.theme-paper .sidebar,
+.theme-paper .assistant-panel,
+.theme-paper .history-panel,
+.theme-paper .asset-panel,
+.theme-paper .volume-heading,
+.theme-paper .scene-planning-panel,
+.theme-paper .statusbar,
+.theme-paper .mobile-tool-dock,
+.theme-paper .settings-modal {
+  background-color: var(--paper-sidebar);
+  color: var(--paper-ink);
+}
+
+.theme-paper .library-modal,
+.theme-paper .confirm-modal,
+.theme-paper .export-modal,
+.theme-paper .draft-comparison-modal,
+.theme-paper .ai-task-center,
+.theme-paper .context-menu,
+.theme-paper .find-panel,
+.theme-paper .image-format-toolbar,
+.theme-paper .agent-inline-review {
+  background-color: var(--paper-surface-raised);
+  color: var(--paper-ink);
+}
+
+.theme-paper :where(input, textarea, select, .wheel-select-trigger, .ai-provider-format) {
+  background-color: var(--paper-surface-raised);
+  border-color: var(--paper-border);
+  color: var(--paper-ink);
+}
+
+.theme-paper :where(button, input, textarea, select) {
+  color: var(--paper-ink);
+}
+
+.theme-paper :where(.topbar, .sidebar, .assistant-panel, .history-panel, .asset-panel,
+  .writing-area, .paper, .settings-modal, .library-modal, .confirm-modal,
+  .export-modal, .draft-comparison-modal, .ai-task-center, .context-menu,
+  .find-panel, .image-format-toolbar, .agent-inline-review) {
+  border-color: var(--paper-border);
+}
+
+.theme-paper :where(.brand, .document-name input, .chapter-title, .chapter-copy strong,
+  .scene-item strong, .tiptap, .assistant-panel strong, .assistant-panel h4,
+  .history-panel strong, .asset-panel strong, .settings-modal strong,
+  .library-modal strong, .modal-backdrop section strong) {
+  color: var(--paper-ink);
+}
+
+.theme-paper :where(.sidebar-heading, .volume-heading input, .top-project-button,
+  .chapter-copy small, .chapter-index, .scene-list-heading, .scene-item,
+  .scene-item > span, .statusbar, .save-state, .assistant-panel small,
+  .history-panel small, .asset-panel small, .setting-row small, .ui-text-color-control > span) {
+  color: var(--paper-ink-muted);
+}
+
+.theme-paper :where(.icon-button:hover, .volume-toggle:hover, .chapter-item:hover,
+  .scene-item:hover, .trash-entry:hover, .project-row:hover, .window-control:hover,
+  .settings-categories button:hover, .character-directory button:hover,
+  .character-detail-tabs button:hover, .assistant-actions button:hover,
+  .agent-conversation-toolbar > button:hover, .agent-task-list article > footer button:hover,
+  .find-line > button:not(.icon-button):hover) {
+  background-color: var(--paper-hover);
+}
+
+.theme-paper :where(.chapter-item.active, .scene-item.active, .trash-entry.active,
+  .project-row.active, .icon-button.active, .settings-categories button.active,
+  .segmented-control button.active, .offline-naming-segment button.active,
+  .memory-filters button.active, .character-directory button.active,
+  .character-detail-tabs button.active, .mobile-tool-dock button.active,
+  .mobile-tool-dock button[aria-pressed="true"]) {
+  background-color: var(--paper-selected);
+  color: var(--paper-accent-strong);
+}
+
+.theme-paper :where(.accent, .accent-text, .top-project-button:hover,
+  .scene-planning-title, .focus-button, .word-goal.is-complete,
+  .assistant-header > div, .ai-task-center > header > div,
+  .assistant-trigger, .new-project, .update-setting-control button,
+  .asset-toolbar button, .review-toolbar button, .draft-generate) {
+  color: var(--paper-accent);
+}
+
+.theme-paper :where(.focus-button, .assistant-trigger, .new-project,
+  .update-setting-control button, .asset-toolbar button, .review-toolbar button,
+  .draft-generate, .scene-range-control button, .find-line > button:not(.icon-button)) {
+  border-color: var(--paper-border-strong);
+  background-color: var(--paper-accent-soft);
+}
+
+.theme-paper :where(.focus-button:hover, .assistant-trigger:hover, .new-project:hover,
+  .asset-toolbar button:hover, .review-toolbar button:hover,
+  .find-line > button:not(.icon-button):hover) {
+  background-color: var(--paper-selected);
+}
+
+.theme-paper :where(.tiptap) {
+  color: var(--paper-ink);
+  caret-color: var(--paper-accent);
+}
+
+.theme-paper :where(.tiptap p.is-editor-empty:first-child::before,
+  .tiptap .story-figure figcaption, .statusbar, .chapter-copy small,
+  .volume-count, .scene-range-control small) {
+  color: var(--paper-ink-faint);
+}
+
+.theme-paper :where(.agent-draft-insertion, .import-progress.complete) {
+  color: var(--paper-success);
+}
+.theme-paper :where(.agent-draft-insertion) { background: var(--paper-success-soft); }
+.theme-paper :where(.agent-draft-deletion, .save-state.error, .import-progress.error,
+  .context-menu button.danger, .trash-actions button.danger) {
+  color: var(--paper-danger);
+}
+.theme-paper :where(.agent-draft-deletion) { background: var(--paper-danger-soft); }
+.theme-paper :where(.has-review-issue.review-severity-warning, .save-state.saving) {
+  color: var(--paper-warning);
+}
+
+.theme-paper .modal-backdrop { background: rgba(73, 54, 35, .34); }
+.theme-paper .context-menu,
+.theme-paper .find-panel,
+.theme-paper .ai-task-center,
+.theme-paper .agent-inline-review { box-shadow: 0 10px 30px var(--paper-shadow); }
+.theme-paper .theme-paper-texture,
+.theme-paper .paper { background-image: url('/BG.jpg'); background-blend-mode: multiply; }
+
+/* 用户自定义 UI 文字颜色不应破坏纸张主题的墨色层级。 */
+.theme-paper.has-custom-ui-text :where(.brand, .document-name input,
+  .chapter-copy strong, .chapter-title, .scene-item strong,
+  .settings-modal :where(strong, input, select), .library-modal :where(strong, input, select),
+  .assistant-panel :where(strong, h4, p, input, textarea, select, q, blockquote, li, dt, dd),
+  .history-panel :where(strong, p, input, textarea, select),
+  .asset-panel :where(strong, p, input, textarea, select)) {
+  color: var(--paper-ink) !important;
+}
+
+/* 最后一道覆盖层：早期纸张规则保留了旧灰绿色值，统一收敛到新 token。 */
+.app-shell.theme-paper :where(input, textarea, select, .wheel-select-trigger) {
+  background-color: var(--paper-surface-raised) !important;
+  border-color: var(--paper-border) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.chapter-item.active, .scene-item.active, .trash-entry.active,
+  .project-row.active, .icon-button.active, .settings-categories button.active,
+  .segmented-control button.active, .offline-naming-segment button.active,
+  .memory-scope-tabs button.active, .memory-filters button.active,
+  .character-directory button.active, .character-detail-tabs button.active,
+  .reference-view-tabs button.active, .advisor-tabs button.active,
+  .advanced-tool-tabs button.active, .advanced-segmented button.active,
+  .draft-mode-tabs button.active, .review-scope-tabs button.active,
+  .review-status-tabs button.active, .mobile-tool-dock button.active,
+  .mobile-tool-dock button[aria-pressed="true"]) {
+  background-color: var(--paper-selected) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.assistant-context, .assistant-actions button,
+  .agent-message.user, .agent-retrieval, .agent-memory-candidate, .agent-draft,
+  .memory-digest-overview, .project-question-box, .ai-conversation-assistant,
+  .creative-dialogue-box, .outline-generate-box, .diagnose-input, .draft-candidate,
+  .review-issue, .source-card-list > article, .advanced-result-list > article,
+  .plot-thread, .attachment-icon) {
+  background-color: var(--paper-surface) !important;
+}
+.app-shell.theme-paper :where(.agent-reasoning, .agent-tools > div,
+  .agent-context-inspector, .agent-task-checklist, .memory-batch-progress,
+  .memory-manual-form, .draft-version-comparison section + section,
+  .review-evidence button, .chapter-digest-index button, .chapter-digest-pagination button) {
+  background-color: var(--paper-sidebar-alt) !important;
+}
+.app-shell.theme-paper :where(.icon-button:hover, .volume-toggle:hover,
+  .chapter-item:hover, .scene-item:hover, .trash-entry:hover, .project-row:hover,
+  .window-control:hover, .settings-categories button:hover, .memory-scope-tabs button:hover,
+  .character-directory button:hover, .character-detail-tabs button:hover,
+  .assistant-actions button:hover, .asset-toolbar button:hover,
+  .memory-candidate-actions button:hover, .project-memory-item > button:hover,
+  .character-memory-entry > button:hover) {
+  background-color: var(--paper-hover) !important;
+}
+
+/* 纸张主题可见组件补全：这些组件在旧主题规则中仍有独立的白色/青绿色。 */
+.app-shell.theme-paper :where(.document-name input, .chapter-title) {
+  background: transparent !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.story-memory, .assistant-context, .assistant-actions button,
+  .agent-conversation-toolbar label, .agent-draft, .agent-message.user,
+  .agent-context-chips button, .offline-naming-notice, .offline-naming-generate,
+  .assistant-empty button, .ai-stream-progress, .agent-status) {
+  background-color: var(--paper-surface) !important;
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.story-memory:hover, .story-memory.active,
+  .assistant-actions button:hover, .offline-naming-list footer button:hover,
+  .offline-naming-list footer button.active, .agent-context-chips button:hover) {
+  background-color: var(--paper-hover) !important;
+  border-color: var(--paper-border-strong) !important;
+}
+.app-shell.theme-paper :where(.assistant-empty, .assistant-context small,
+  .assistant-context span, .assistant-actions small, .agent-message > span,
+  .agent-message.user > small, .offline-naming-form label > span,
+  .offline-naming-list span, .offline-naming-list small, .ai-data-scope,
+  .assistant-panel small, .agent-context-inspector > summary small) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.assistant-header > div, .assistant-actions svg,
+  .assistant-empty svg, .ai-data-scope span, .agent-context-inspector > summary,
+  .offline-naming-list footer button.active, .offline-naming-list footer button:hover,
+  .offline-naming-generate, .assistant-empty button) {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.offline-naming-notice, .ai-stream-progress, .agent-status) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.segmented-control, .offline-naming-segment,
+  .image-align-control) {
+  background-color: var(--paper-sidebar-alt) !important;
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.segmented-control button, .offline-naming-segment button,
+  .image-align-control button) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.segmented-control button.active,
+  .offline-naming-segment button.active, .image-align-control button.active) {
+  background-color: var(--paper-surface-raised) !important;
+  color: var(--paper-accent-strong) !important;
+  box-shadow: 0 1px 3px var(--paper-shadow) !important;
+}
+.app-shell.theme-paper :where(.wheel-select-menu, .ai-endpoint-options) {
+  background-color: var(--paper-surface-raised) !important;
+  border-color: var(--paper-border) !important;
+  box-shadow: 0 10px 28px var(--paper-shadow) !important;
+}
+.app-shell.theme-paper :where(.wheel-select-menu button, .ai-endpoint-options button,
+  .ai-endpoint-options > div) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.wheel-select-menu button:hover,
+  .wheel-select-menu button:focus-visible, .wheel-select-menu button.is-selected,
+  .ai-endpoint-options > div:hover, .ai-endpoint-options > div.is-selected) {
+  background-color: var(--paper-selected) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.offline-naming-form input,
+  .offline-naming-form select, .agent-conversation-toolbar label,
+  .agent-conversation-toolbar .wheel-select-trigger) {
+  background-color: var(--paper-surface-raised) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.offline-naming-generate, .assistant-empty button) {
+  background-color: var(--paper-accent-soft) !important;
+  border-color: var(--paper-border-strong) !important;
+}
+.app-shell.theme-paper :where(.story-memory svg, .assistant-header svg,
+  .agent-context-inspector svg, .agent-conversation-toolbar svg,
+  .offline-naming-panel svg, .assistant-panel .icon-button) {
+  color: var(--paper-accent) !important;
+}
+
+/* 纸张主题最终统一层：覆盖 Agent、设置控件、卷标题和文档跳转按钮中的旧灰/绿规则。 */
+.app-shell.theme-paper :where(.assistant-panel, .assistant-panel .agent-panel-content,
+  .assistant-panel .memory-panel-content, .assistant-panel .offline-naming-panel,
+  .assistant-panel .agent-thread) {
+  background-color: var(--paper-canvas) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.assistant-header, .agent-conversation-toolbar,
+  .agent-status, .agent-composer, .memory-scope-tabs, .memory-toolbar,
+  .memory-range-toolbar, .offline-naming-form) {
+  background-color: var(--paper-sidebar) !important;
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.agent-composer, .agent-task-checklist,
+  .agent-reasoning, .agent-context-inspector, .agent-tools > div,
+  .agent-image-picker, .agent-image-picker > button, .agent-citations button,
+  .agent-memory-candidate, .agent-memory-mutation, .agent-draft,
+  .agent-retrieval, .agent-context-chips button) {
+  background-color: var(--paper-surface) !important;
+  border-color: var(--paper-border) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.agent-empty-mark) {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.agent-message > p, .agent-error p,
+  .agent-draft > p, .agent-memory-candidate > p, .agent-memory-mutation > p,
+  .agent-citations q, .agent-reasoning pre, .agent-composer > textarea) {
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.agent-message > span, .agent-message.user > small,
+  .agent-draft > header span, .agent-draft > header small, .agent-draft > footer span,
+  .agent-tools small, .agent-request-estimate, .agent-citations small,
+  .agent-web-sources > strong, .agent-memory-candidate > header span,
+  .agent-memory-candidate > small, .agent-memory-mutation > header span,
+  .agent-memory-mutation > small, .agent-context-inspector dd,
+  .agent-context-inspector dt, .agent-task-checklist li,
+  .agent-task-checklist > header button, .agent-composer-actions button,
+  .agent-image-picker button span, .agent-image-picker > span) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.agent-tools > div.write-preview,
+  .agent-tools > div.write, .agent-memory-candidate.confirmed,
+  .agent-memory-mutation.confirmed, .agent-draft.accepted) {
+  background-color: var(--paper-success-soft) !important;
+  border-color: var(--paper-success) !important;
+  color: var(--paper-success) !important;
+}
+.app-shell.theme-paper :where(.agent-tools > div.failed,
+  .agent-tools > div.rejected, .agent-draft.rejected) {
+  background-color: var(--paper-danger-soft) !important;
+  border-color: var(--paper-danger) !important;
+  color: var(--paper-danger) !important;
+}
+.app-shell.theme-paper :where(.agent-tools > div.undone) {
+  background-color: var(--paper-warning-soft) !important;
+  border-color: var(--paper-warning) !important;
+  color: var(--paper-warning) !important;
+}
+.app-shell.theme-paper :where(.agent-composer-actions button:hover,
+  .agent-composer-actions button.active, .agent-task-checklist > header button:hover,
+  .agent-citations button:hover, .agent-draft > footer button.accept:hover) {
+  background-color: var(--paper-hover) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.agent-composer-actions .agent-send) {
+  background-color: var(--paper-accent-soft) !important;
+  border-color: var(--paper-border-strong) !important;
+  color: var(--paper-accent-strong) !important;
+}
+
+.app-shell.theme-paper :where(.setting-row input[type="range"]) {
+  accent-color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.switch-track) {
+  border-color: var(--paper-border-strong) !important;
+  background-color: var(--paper-sidebar-alt) !important;
+}
+.app-shell.theme-paper :where(.switch-control input:checked + .switch-track) {
+  border-color: var(--paper-accent) !important;
+  background-color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.switch-track > span) {
+  background-color: var(--paper-surface-raised) !important;
+}
+.app-shell.theme-paper :where(.ui-text-color-control button,
+  .goal-number-input, .ai-budget-control input) {
+  background-color: var(--paper-surface-raised) !important;
+  border-color: var(--paper-border) !important;
+  color: var(--paper-ink) !important;
+}
+
+/* 通用输入框覆盖不能影响卷名、作品名和章节名，它们保持无底色。 */
+.app-shell.theme-paper :where(.volume-heading input,
+  .document-name input, .chapter-title) {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.volume-heading, .volume-heading input,
+  .volume-count, .volume-toggle, .chapter-index, .chapter-copy small,
+  .scene-list-heading, .scene-item > span) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.volume-heading input:focus,
+  .volume-heading input:hover) {
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.volume-heading .icon-button,
+  .chapter-menu-trigger, .scene-menu-trigger) {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.volume-heading .icon-button:hover,
+  .chapter-menu-trigger:hover, .scene-menu-trigger:hover) {
+  background-color: var(--paper-hover) !important;
+}
+
+.app-shell.theme-paper :where(.document-jump-buttons button) {
+  background-color: var(--paper-surface) !important;
+  border-color: var(--paper-border) !important;
+  color: var(--paper-accent) !important;
+  box-shadow: 0 3px 12px var(--paper-shadow) !important;
+}
+.app-shell.theme-paper :where(.document-jump-buttons button:hover:not(:disabled)) {
+  background-color: var(--paper-hover) !important;
+  border-color: var(--paper-border-strong) !important;
+  color: var(--paper-accent-strong) !important;
+}
+
+.app-shell.theme-paper :where(.setting-row input[type="range"]) {
+  appearance: none;
+  height: 5px;
+  border: 1px solid var(--paper-border-strong) !important;
+  border-radius: 999px;
+  background: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.setting-row input[type="range"])::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.setting-row input[type="range"])::-webkit-slider-thumb {
+  appearance: none;
+  width: 17px;
+  height: 17px;
+  margin-top: -7px;
+  border: 2px solid var(--paper-surface);
+  border-radius: 50%;
+  background: var(--paper-accent) !important;
+  box-shadow: 0 1px 3px var(--paper-shadow);
+}
+.app-shell.theme-paper :where(.setting-row input[type="range"])::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.setting-row input[type="range"])::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.setting-row input[type="range"])::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--paper-surface);
+  border-radius: 50%;
+  background: var(--paper-accent) !important;
+  box-shadow: 0 1px 3px var(--paper-shadow);
+}
+
+.app-shell.theme-paper :where(.assistant-panel svg, .assistant-panel .agent-empty-mark,
+  .assistant-panel .agent-task-icon, .assistant-panel .ai-task-icon) {
+  color: var(--paper-accent) !important;
+}
+
+/* 故事记忆专属纸张层：人物、候选、时间线和一致性视图统一使用纸张语义色。 */
+.app-shell.theme-paper :where(.memory-panel-content, .memory-chapter-scroll,
+  .memory-candidate-list, .project-memory-list, .character-memory-detail,
+  .character-detail-content, .memory-digest-list) {
+  background-color: var(--paper-canvas) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.memory-scope-tabs, .memory-toolbar,
+  .memory-range-toolbar, .memory-filters, .memory-lifecycle-filters,
+  .character-detail-tabs, .memory-manual-form, .memory-config-notice,
+  .memory-digest-overview) {
+  background-color: var(--paper-sidebar) !important;
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.memory-scope-tabs button, .memory-filters button,
+  .memory-lifecycle-filters button, .character-detail-tabs button) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.memory-scope-tabs button.active,
+  .memory-filters button.active, .memory-lifecycle-filters button.active,
+  .character-detail-tabs button.active) {
+  background-color: var(--paper-surface-raised) !important;
+  color: var(--paper-accent-strong) !important;
+  box-shadow: 0 1px 3px var(--paper-shadow) !important;
+}
+.app-shell.theme-paper :where(.memory-toolbar > button,
+  .memory-range-toolbar > button, .memory-entity-merge button,
+  .memory-config-notice button, .memory-manual-form footer button,
+  .memory-candidate-actions button, .project-memory-item > button,
+  .character-memory-entry > button, .character-state-row button,
+  .story-thread-actions button, .memory-consistency-actions button,
+  .memory-summary-toggle) {
+  color: var(--paper-accent) !important;
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.memory-toolbar > button:hover,
+  .memory-toolbar > button.compact.active, .memory-range-toolbar > button:hover,
+  .memory-candidate-actions button:hover, .project-memory-item > button:hover,
+  .character-memory-entry > button:hover, .character-state-row button:hover,
+  .story-thread-actions button:hover, .memory-consistency-actions button:hover,
+  .memory-summary-toggle:hover, .memory-candidate-details-toggle:hover,
+  .memory-candidate-details-toggle.active) {
+  background-color: var(--paper-hover) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.memory-toolbar > button,
+  .memory-range-toolbar > button, .memory-entity-merge button,
+  .memory-config-notice button, .memory-manual-form footer button,
+  .memory-candidate-actions button.confirm) {
+  background-color: var(--paper-accent-soft) !important;
+}
+.app-shell.theme-paper :where(.memory-message, .memory-batch-progress,
+  .memory-digest-overview, .memory-config-notice, .memory-manual-form) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.chapter-memory-summary p,
+  .chapter-memory-summary > div, .memory-candidate textarea,
+  .memory-candidate input, .project-memory-item > p,
+  .character-memory-entry > p, .character-state-row p,
+  .story-thread-item > p, .memory-consistency-item > p,
+  .volume-digest-content > p, .memory-digest-overview p) {
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.chapter-memory-summary span,
+  .memory-toolbar > span, .memory-range-toolbar > span,
+  .memory-candidate-meta small, .memory-evidence-meta,
+  .memory-empty, .project-memory-toolbar span, .project-memory-item > div small,
+  .memory-entity-summary, .timeline-validity, .character-memory-heading small,
+  .character-memory-aliases, .memory-inline-empty, .character-directory small,
+  .character-memory-detail > header small, .character-memory-detail > header > span,
+  .character-memory-entry > div small, .character-previous-value,
+  .character-state-row small, .story-thread-item > div:first-child small,
+  .memory-consistency-item > div:first-child small, .story-thread-meta,
+  .memory-consistency-item > small, .memory-digest-overview span,
+  .memory-digest-list summary small, .volume-digest-content > p) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.memory-candidate-meta span,
+  .project-memory-item > div span, .character-memory-entry > div span,
+  .character-state-row span, .story-thread-item > div:first-child span,
+  .memory-consistency-item > div:first-child span,
+  .memory-digest-list summary span, .memory-digest-overview strong) {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.memory-candidate, .memory-candidate.is-stale,
+  .project-memory-item, .character-memory-profile, .character-memory-entry,
+  .story-thread-item, .memory-consistency-item, .memory-digest-list details,
+  .memory-manual-form, .memory-config-notice) {
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.memory-candidate.is-stale,
+  .project-memory-item.is-stale) {
+  background-color: var(--paper-warning-soft) !important;
+  color: var(--paper-warning) !important;
+}
+.app-shell.theme-paper :where(.memory-candidate input:hover,
+  .memory-candidate textarea:hover, .memory-candidate input:focus,
+  .memory-candidate textarea:focus, .memory-candidate .memory-candidate-metadata input,
+  .project-memory-toolbar input, .memory-manual-form input,
+  .memory-manual-form textarea) {
+  background-color: var(--paper-surface-raised) !important;
+  border-color: var(--paper-border) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.memory-candidate-static-field > strong) {
+  background-color: var(--paper-sidebar-alt) !important;
+  border-color: var(--paper-border) !important;
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.memory-candidate blockquote) {
+  border-color: var(--paper-border-strong) !important;
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.memory-timeline-list::before,
+  .character-timeline-entry::before) {
+  background-color: var(--paper-border-strong) !important;
+}
+.app-shell.theme-paper :where(.memory-timeline-list .project-memory-item::before,
+  .character-timeline-entry::after) {
+  border-color: var(--paper-surface) !important;
+  background-color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.agent-memory-candidate > header > div,
+  .agent-memory-candidate > footer span, .memory-candidate-actions button,
+  .project-memory-item > button, .character-memory-entry > button) {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.agent-memory-candidate.confirmed,
+  .agent-memory-mutation.confirmed) {
+  border-color: var(--paper-success) !important;
+  background-color: var(--paper-success-soft) !important;
+}
+.app-shell.theme-paper :where(.agent-memory-candidate > footer button.confirm,
+  .agent-memory-mutation > footer button.confirm,
+  .memory-manual-form footer button.confirm) {
+  background-color: var(--paper-success-soft) !important;
+  border-color: var(--paper-success) !important;
+  color: var(--paper-success) !important;
+}
+
+/* 纸张纹理保持材质感，但降低到 30% 可见度（前景覆盖层 70%）。 */
+.app-shell.theme-paper::after {
+  background-image: linear-gradient(var(--paper-texture-overlay), var(--paper-texture-overlay)), url('/BG.jpg');
+  background-blend-mode: normal;
+}
+.app-shell.theme-paper .paper {
+  background-image: linear-gradient(var(--paper-texture-overlay), var(--paper-texture-overlay)), url('/BG.jpg') !important;
+  background-blend-mode: normal !important;
+}
+
+/* Agent 发送按钮：普通态无底色，悬停/聚焦时才显示纸张强调底色。 */
+.app-shell.theme-paper .agent-composer-actions .agent-send {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--paper-accent) !important;
+  box-shadow: none !important;
+}
+.app-shell.theme-paper .agent-composer-actions .agent-send:hover:not(:disabled),
+.app-shell.theme-paper .agent-composer-actions .agent-send:focus-visible {
+  border-color: var(--paper-border-strong) !important;
+  background: var(--paper-accent-soft) !important;
+  color: var(--paper-accent-strong) !important;
+  box-shadow: 0 2px 8px var(--paper-shadow) !important;
+}
+
+/* 专注和字里助手按钮使用暖纸面，避免灰白底色。 */
+.app-shell.theme-paper :where(.focus-button, .assistant-trigger) {
+  border-color: var(--paper-border-strong) !important;
+  background: var(--paper-surface-raised) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.focus-button:hover, .assistant-trigger:hover,
+  .focus-button:focus-visible, .assistant-trigger:focus-visible) {
+  border-color: var(--paper-accent) !important;
+  background: var(--paper-accent-soft) !important;
+  color: var(--paper-accent-strong) !important;
+}
+
+/* 写作设置四个分类按钮的 hover/active 文字不再使用绿色。 */
+.app-shell.theme-paper .settings-categories button {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper .settings-categories button:hover {
+  background: var(--paper-hover) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .settings-categories button.active {
+  background: var(--paper-selected) !important;
+  color: var(--paper-accent-strong) !important;
+}
+
+/* AI 服务设置中红框标出的绿色/灰色残留。 */
+.app-shell.theme-paper .settings-modal > header > div {
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.ai-provider-format, .ai-endpoint-combobox > button,
+  .ai-setting-field > input, .ai-key-input, .ai-model-field > input,
+  .ai-model-field > select, .ai-model-field .wheel-select-trigger,
+  .ai-fetch-models, .ai-credential-row button) {
+  background-color: var(--paper-surface-raised) !important;
+  border-color: var(--paper-border) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.ai-provider-format, .ai-fetch-models,
+  .ai-credential-row button) {
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.ai-endpoint-combobox > button,
+  .ai-key-input svg, .ai-model-field svg, .ai-fetch-models svg,
+  .ai-credential-status svg) {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.ai-endpoint-combobox:focus-within > input,
+  .ai-endpoint-combobox:focus-within > button, .ai-setting-field > input:focus,
+  .ai-key-input:focus-within, .ai-model-field > input:focus,
+  .ai-model-field > select:focus) {
+  border-color: var(--paper-accent) !important;
+  box-shadow: 0 0 0 2px rgba(138, 90, 59, .14) !important;
+}
+.app-shell.theme-paper :where(.ai-credential-status,
+  .ai-credential-status.saved, .ai-credential-status.restored) {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper .ai-credential-status.error {
+  color: var(--paper-danger) !important;
+}
+
+/* 纸张主题最终清理：作品库、通用弹窗与 AI 状态控件不得回退到旧的绿灰色。 */
+.app-shell.theme-paper :where(.top-project-button, .library-modal > header > div,
+  .asset-panel .assistant-header > div, .asset-panel .assistant-header > div svg) {
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .top-project-button {
+  background-color: var(--paper-surface-raised) !important;
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper .top-project-button:hover {
+  background-color: var(--paper-accent-soft) !important;
+  color: var(--paper-accent-strong) !important;
+}
+
+.app-shell.theme-paper :where(.library-modal, .app-dialog) {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-surface-raised) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper :where(.library-modal > header, .library-modal > footer,
+  .app-dialog > footer) {
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper :where(.project-row:hover) {
+  background-color: var(--paper-hover) !important;
+}
+.app-shell.theme-paper :where(.project-open span, .empty-project-trash) {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.project-trash-actions button,
+  .library-modal .icon-button) {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper .project-trash-actions button:hover,
+.app-shell.theme-paper .library-modal .icon-button:hover {
+  background-color: var(--paper-hover) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .project-trash-actions button.danger {
+  color: var(--paper-danger) !important;
+}
+.app-shell.theme-paper .project-trash-actions button.danger:hover {
+  background-color: var(--paper-danger-soft) !important;
+  color: var(--paper-danger) !important;
+}
+.app-shell.theme-paper .new-project {
+  border-color: var(--paper-border-strong) !important;
+  background-color: var(--paper-surface-raised) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .new-project:hover {
+  background-color: var(--paper-accent-soft) !important;
+}
+
+.app-shell.theme-paper .app-dialog-icon {
+  background-color: var(--paper-accent-soft) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .app-dialog-icon.danger {
+  background-color: var(--paper-danger-soft) !important;
+  color: var(--paper-danger) !important;
+}
+.app-shell.theme-paper :where(.app-dialog > footer button) {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-surface) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper .app-dialog > footer .primary-action {
+  border-color: var(--paper-border-strong) !important;
+  background-color: var(--paper-accent-soft) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .app-dialog > footer .danger-action {
+  border-color: var(--paper-danger) !important;
+  background-color: var(--paper-danger-soft) !important;
+  color: var(--paper-danger) !important;
+}
+.app-shell.theme-paper .new-project-field > span {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper .new-project-field input {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-surface-raised) !important;
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper .new-project-field input:focus {
+  border-color: var(--paper-accent) !important;
+  box-shadow: 0 0 0 2px rgba(138, 90, 59, .14) !important;
+}
+
+.app-shell.theme-paper :where(.update-setting-control button,
+  .ai-fetch-models, .ai-connection-row button) {
+  border-color: var(--paper-border-strong) !important;
+  background-color: var(--paper-surface-raised) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.update-setting-control button:hover:not(:disabled),
+  .ai-fetch-models:hover:not(:disabled), .ai-connection-row button:hover:not(:disabled)) {
+  background-color: var(--paper-accent-soft) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.ai-fetch-models svg, .ai-connection-row button svg) {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper :where(.ai-connection-status, .ai-connection-status.success,
+  .ai-connection-status.testing) {
+  color: var(--paper-success) !important;
+}
+.app-shell.theme-paper .ai-connection-status.error {
+  color: var(--paper-danger) !important;
+}
+.app-shell.theme-paper .ai-usage-summary {
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper .ai-usage-summary > span small,
+.app-shell.theme-paper .ai-usage-summary > div small {
+  color: var(--paper-ink-faint) !important;
+}
+.app-shell.theme-paper .ai-usage-summary > div strong {
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .ai-usage-summary > button {
+  color: var(--paper-accent) !important;
+}
+
+/* Paper button standard: quiet controls, neutral controls, primary actions and danger actions. */
+.app-shell.theme-paper {
+  --paper-btn-neutral-bg: var(--paper-surface-raised);
+  --paper-btn-neutral-hover: var(--paper-accent-soft);
+  --paper-btn-primary-bg: var(--paper-accent-soft);
+  --paper-btn-primary-hover: var(--paper-accent);
+  --paper-btn-primary-active: var(--paper-accent-strong);
+  --paper-btn-danger-hover: #e2bdb4;
+  --paper-btn-focus-ring: rgba(138, 90, 59, .22);
+}
+
+.app-shell.theme-paper :where(button) {
+  -webkit-tap-highlight-color: transparent;
+}
+.app-shell.theme-paper :where(button:focus-visible) {
+  outline: 2px solid var(--paper-btn-focus-ring) !important;
+  outline-offset: 1px;
+}
+.app-shell.theme-paper :where(button:disabled) {
+  cursor: default !important;
+  opacity: .48;
+}
+.app-shell.theme-paper :where(button:disabled:hover) {
+  background-color: inherit !important;
+  color: inherit !important;
+  border-color: inherit !important;
+  box-shadow: none !important;
+}
+
+/* Quiet/icon controls stay transparent until the pointer or keyboard reaches them. */
+.app-shell.theme-paper :where(
+  .icon-button, .volume-toggle, .chapter-menu-trigger, .scene-menu-trigger,
+  .window-control, .ai-task-center-trigger, .agent-conversation-toolbar > button,
+  .agent-composer-actions button:not(.agent-send), .agent-task-checklist > header button,
+  .ai-task-list article > footer button, .ai-task-center > footer button,
+  .offline-naming-list footer button, .memory-candidate-actions button,
+  .project-memory-item > button, .character-memory-entry > button,
+  .character-state-row button, .story-thread-actions button,
+  .memory-consistency-actions button, .memory-summary-toggle,
+  .memory-candidate-details-toggle) {
+  border-color: transparent !important;
+  background-color: transparent !important;
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(
+  .icon-button:hover:not(:disabled), .volume-toggle:hover:not(:disabled),
+  .chapter-menu-trigger:hover:not(:disabled), .scene-menu-trigger:hover:not(:disabled),
+  .window-control:hover:not(:disabled), .ai-task-center-trigger:hover:not(:disabled),
+  .agent-conversation-toolbar > button:hover:not(:disabled),
+  .agent-composer-actions button:not(.agent-send):hover:not(:disabled),
+  .agent-task-checklist > header button:hover:not(:disabled),
+  .ai-task-list article > footer button:hover:not(:disabled),
+  .ai-task-center > footer button:hover:not(:disabled),
+  .offline-naming-list footer button:hover:not(:disabled),
+  .memory-candidate-actions button:hover:not(:disabled),
+  .project-memory-item > button:hover:not(:disabled),
+  .character-memory-entry > button:hover:not(:disabled),
+  .character-state-row button:hover:not(:disabled),
+  .story-thread-actions button:hover:not(:disabled),
+  .memory-consistency-actions button:hover:not(:disabled),
+  .memory-summary-toggle:hover:not(:disabled),
+  .memory-candidate-details-toggle:hover:not(:disabled)) {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-hover) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(
+  .icon-button.active, .mobile-tool-dock button.active,
+  .mobile-tool-dock button[aria-pressed="true"],
+  .offline-naming-list footer button.active,
+  .memory-candidate-details-toggle.active) {
+  border-color: var(--paper-border-strong) !important;
+  background-color: var(--paper-selected) !important;
+  color: var(--paper-accent-strong) !important;
+}
+
+/* Neutral controls use a light paper face and a darker paper hover face. */
+.app-shell.theme-paper :where(
+  .top-project-button, .focus-button, .assistant-trigger,
+  .update-setting-control button, .ai-fetch-models, .ai-connection-row button,
+  .ai-credential-row button, .assistant-empty button, .agent-error button,
+  .document-jump-buttons button, .scene-range-control button,
+  .ui-text-color-control button, .goal-number-input,
+  .memory-toolbar > button.secondary, .memory-manual-form footer button,
+  .draft-compare-toolbar button) {
+  border-color: var(--paper-border-strong) !important;
+  background-color: var(--paper-btn-neutral-bg) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(
+  .top-project-button:hover:not(:disabled), .focus-button:hover:not(:disabled),
+  .assistant-trigger:hover:not(:disabled),
+  .update-setting-control button:hover:not(:disabled),
+  .ai-fetch-models:hover:not(:disabled), .ai-connection-row button:hover:not(:disabled),
+  .ai-credential-row button:hover:not(:disabled), .assistant-empty button:hover:not(:disabled),
+  .agent-error button:hover:not(:disabled), .document-jump-buttons button:hover:not(:disabled),
+  .scene-range-control button:hover:not(:disabled),
+  .ui-text-color-control button:hover:not(:disabled),
+  .memory-toolbar > button.secondary:hover:not(:disabled),
+  .memory-manual-form footer button:hover:not(:disabled),
+  .draft-compare-toolbar button:hover:not(:disabled)) {
+  border-color: var(--paper-accent) !important;
+  background-color: var(--paper-btn-neutral-hover) !important;
+  color: var(--paper-accent-strong) !important;
+}
+
+/* Primary actions have a strong, unmistakable hover state. */
+.app-shell.theme-paper :where(
+  .new-project, .asset-toolbar button, .review-toolbar button,
+  .draft-generate, .find-line > button:not(.icon-button),
+  .memory-toolbar > button:not(.secondary), .memory-range-toolbar > button,
+  .memory-entity-merge button, .memory-config-notice button,
+  .creative-dialogue-box > button, .outline-generate-box > button,
+  .diagnose-input > button, .advanced-run, .source-card-create > button,
+  .project-question-box button) {
+  border-color: var(--paper-border-strong) !important;
+  background-color: var(--paper-btn-primary-bg) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(
+  .new-project:hover:not(:disabled), .asset-toolbar button:hover:not(:disabled),
+  .review-toolbar button:hover:not(:disabled), .draft-generate:hover:not(:disabled),
+  .find-line > button:not(.icon-button):hover:not(:disabled),
+  .memory-toolbar > button:not(.secondary):hover:not(:disabled),
+  .memory-range-toolbar > button:hover:not(:disabled),
+  .memory-entity-merge button:hover:not(:disabled),
+  .memory-config-notice button:hover:not(:disabled),
+  .creative-dialogue-box > button:hover:not(:disabled),
+  .outline-generate-box > button:hover:not(:disabled),
+  .diagnose-input > button:hover:not(:disabled), .advanced-run:hover:not(:disabled),
+  .source-card-create > button:hover:not(:disabled),
+  .project-question-box button:hover:not(:disabled)) {
+  border-color: var(--paper-accent-strong) !important;
+  background-color: var(--paper-btn-primary-hover) !important;
+  color: var(--paper-surface-raised) !important;
+  box-shadow: 0 2px 7px var(--paper-shadow) !important;
+}
+
+/* Semantic danger controls use warm red, never the old green success color. */
+.app-shell.theme-paper :where(
+  button.danger, .danger-action, .trash-actions button.danger,
+  .project-trash-actions button.danger, .asset-delete,
+  .attachment-actions button.danger, .context-menu button.danger,
+  .trash-batch-bar button) {
+  border-color: var(--paper-danger) !important;
+  background-color: var(--paper-danger-soft) !important;
+  color: var(--paper-danger) !important;
+}
+.app-shell.theme-paper :where(
+  button.danger:hover:not(:disabled), .danger-action:hover:not(:disabled),
+  .trash-actions button.danger:hover:not(:disabled),
+  .project-trash-actions button.danger:hover:not(:disabled),
+  .asset-delete:hover:not(:disabled), .attachment-actions button.danger:hover:not(:disabled),
+  .context-menu button.danger:hover:not(:disabled),
+  .trash-batch-bar button:hover:not(:disabled)) {
+  border-color: var(--paper-danger) !important;
+  background-color: var(--paper-btn-danger-hover) !important;
+  color: var(--paper-danger) !important;
+}
+
+/* Left navigation: active icons must follow the selected paper color. */
+.app-shell.theme-paper :where(
+  .chapter-item, .scene-item, .trash-entry, .story-memory,
+  .sidebar .icon-button, .volume-toggle, .chapter-menu-trigger,
+  .scene-menu-trigger) svg {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(
+  .chapter-item:hover, .scene-item:hover, .trash-entry:hover,
+  .story-memory:hover, .sidebar .icon-button:hover,
+  .volume-toggle:hover, .chapter-menu-trigger:hover,
+  .scene-menu-trigger:hover) svg {
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(
+  .chapter-item.active, .scene-item.active, .trash-entry.active,
+  .story-memory.active, .sidebar .icon-button.active) {
+  background-color: var(--paper-selected) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(
+  .chapter-item.active svg, .scene-item.active svg,
+  .trash-entry.active svg, .story-memory.active svg,
+  .sidebar .icon-button.active svg) {
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.chapter-index, .scene-item > span, .volume-count) {
+  color: var(--paper-ink-faint) !important;
+}
+
+/* AI task center: container, progress, badge, and task actions share the paper scale. */
+.app-shell.theme-paper .ai-task-center {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-surface-raised) !important;
+  box-shadow: 0 14px 38px var(--paper-shadow) !important;
+}
+.app-shell.theme-paper :where(.ai-task-center > header, .ai-task-center > footer,
+  .ai-task-list article) {
+  border-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper .ai-task-center > header > div {
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .ai-task-center-trigger {
+  border-color: transparent !important;
+  background-color: transparent !important;
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper .ai-task-center-trigger:hover:not(:disabled),
+.app-shell.theme-paper .ai-task-center-trigger.is-running {
+  border-color: var(--paper-border-strong) !important;
+  background-color: var(--paper-accent-soft) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .ai-task-center-trigger > span {
+  background-color: var(--paper-accent) !important;
+  color: var(--paper-surface-raised) !important;
+}
+.app-shell.theme-paper .ai-task-list > p,
+.app-shell.theme-paper .ai-task-list article span,
+.app-shell.theme-paper .ai-task-list article small {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper .ai-task-list article strong {
+  color: var(--paper-ink) !important;
+}
+.app-shell.theme-paper .ai-task-icon,
+.app-shell.theme-paper .ai-task-list article > footer button {
+  color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper .ai-task-list article.failed .ai-task-icon,
+.app-shell.theme-paper .ai-task-list article.interrupted .ai-task-icon {
+  color: var(--paper-danger) !important;
+}
+.app-shell.theme-paper .ai-task-list article.completed .ai-task-icon {
+  color: var(--paper-success) !important;
+}
+.app-shell.theme-paper .ai-task-list article i {
+  background-color: var(--paper-border) !important;
+}
+.app-shell.theme-paper .ai-task-list article i b {
+  background-color: var(--paper-accent) !important;
+}
+.app-shell.theme-paper .ai-task-list article > footer button:hover:not(:disabled),
+.app-shell.theme-paper .ai-task-center > footer button:hover:not(:disabled) {
+  background-color: var(--paper-hover) !important;
+  color: var(--paper-accent-strong) !important;
+}
+
+/* Confirm/accept states retain semantic meaning with a warm paper brown. */
+.app-shell.theme-paper :where(
+  .agent-memory-candidate > footer button.confirm,
+  .agent-memory-mutation > footer button.confirm,
+  .memory-manual-form footer button.confirm,
+  .agent-draft > footer button.accept, .draft-candidate > footer button.accept,
+  .review-issue > footer button.resolve) {
+  border-color: var(--paper-success) !important;
+  background-color: var(--paper-success-soft) !important;
+  color: var(--paper-success) !important;
+}
+.app-shell.theme-paper :where(
+  .agent-memory-candidate > footer button.confirm:hover:not(:disabled),
+  .agent-memory-mutation > footer button.confirm:hover:not(:disabled),
+  .memory-manual-form footer button.confirm:hover:not(:disabled),
+  .agent-draft > footer button.accept:hover:not(:disabled),
+  .draft-candidate > footer button.accept:hover:not(:disabled),
+  .review-issue > footer button.resolve:hover:not(:disabled)) {
+  border-color: var(--paper-success) !important;
+  background-color: var(--paper-success) !important;
+  color: var(--paper-surface-raised) !important;
+}
+
+/* Remaining compact buttons and segmented controls follow the quiet-control scale. */
+.app-shell.theme-paper :where(
+  .conversation-history-toolbar button,
+  .advisor-conversation-history > div:first-child > button,
+  .advisor-history-assistant > button, .creative-questions button,
+  .outline-node > div button, .source-card-list > article > div button,
+  .advanced-record-heading button, .advisor-directions footer button,
+  .image-align-control button, .ai-endpoint-remove) {
+  border-color: transparent !important;
+  background-color: transparent !important;
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(
+  .conversation-history-toolbar button:hover:not(:disabled),
+  .advisor-conversation-history > div:first-child > button:hover:not(:disabled),
+  .advisor-history-assistant > button:hover:not(:disabled),
+  .creative-questions button:hover:not(:disabled),
+  .outline-node > div button:hover:not(:disabled),
+  .source-card-list > article > div button:hover:not(:disabled),
+  .advanced-record-heading button:hover:not(:disabled),
+  .advisor-directions footer button:hover:not(:disabled),
+  .image-align-control button:hover:not(:disabled),
+  .ai-endpoint-remove:hover:not(:disabled)) {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-hover) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.agent-context-chips button) {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-surface) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(.agent-context-chips button:hover:not(:disabled),
+  .answer-citations button:hover:not(:disabled)) {
+  border-color: var(--paper-accent) !important;
+  background-color: var(--paper-accent-soft) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .answer-citations button {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-surface) !important;
+  color: var(--paper-ink) !important;
+}
+
+.app-shell.theme-paper :where(
+  .segmented-control button, .offline-naming-segment button,
+  .memory-scope-tabs button, .memory-filters button,
+  .memory-lifecycle-filters button, .character-detail-tabs button,
+  .reference-view-tabs button, .advisor-tabs button,
+  .advanced-tool-tabs button, .advanced-segmented button,
+  .draft-mode-tabs button, .review-scope-tabs button,
+  .review-status-tabs button, .outline-levels button) {
+  border-color: transparent !important;
+  background-color: transparent !important;
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(
+  .segmented-control button:hover:not(:disabled),
+  .offline-naming-segment button:hover:not(:disabled),
+  .memory-scope-tabs button:hover:not(:disabled),
+  .memory-filters button:hover:not(:disabled),
+  .memory-lifecycle-filters button:hover:not(:disabled),
+  .character-detail-tabs button:hover:not(:disabled),
+  .reference-view-tabs button:hover:not(:disabled),
+  .advisor-tabs button:hover:not(:disabled),
+  .advanced-tool-tabs button:hover:not(:disabled),
+  .advanced-segmented button:hover:not(:disabled),
+  .draft-mode-tabs button:hover:not(:disabled),
+  .review-scope-tabs button:hover:not(:disabled),
+  .review-status-tabs button:hover:not(:disabled),
+  .outline-levels button:hover:not(:disabled)) {
+  background-color: var(--paper-hover) !important;
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper :where(
+  .segmented-control button.active, .offline-naming-segment button.active,
+  .memory-scope-tabs button.active, .memory-filters button.active,
+  .memory-lifecycle-filters button.active, .character-detail-tabs button.active,
+  .reference-view-tabs button.active, .advisor-tabs button.active,
+  .advanced-tool-tabs button.active, .advanced-segmented button.active,
+  .draft-mode-tabs button.active, .review-scope-tabs button.active,
+  .review-status-tabs button.active, .outline-levels button.active) {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-surface-raised) !important;
+  color: var(--paper-accent-strong) !important;
+  box-shadow: 0 1px 3px var(--paper-shadow) !important;
+}
+
+/* Status and progress accents in the task/agent surfaces are brown or red, never green. */
+.app-shell.theme-paper :where(
+  .import-progress, .ai-stream-progress, .agent-status,
+  .offline-naming-notice, .recovery-banner) {
+  border-color: var(--paper-border) !important;
+  background-color: var(--paper-surface) !important;
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper :where(.import-progress.complete, .ai-stream-progress svg,
+  .agent-task-checklist li.complete, .agent-task-checklist li.running) {
+  color: var(--paper-success) !important;
+}
+.app-shell.theme-paper :where(.import-progress i b) {
+  background-color: var(--paper-success) !important;
+}
+.app-shell.theme-paper :where(.agent-new-chapter-preview, .agent-tools > div.write-preview,
+  .agent-tools > div.write) {
+  border-color: var(--paper-success) !important;
+  background-color: var(--paper-success-soft) !important;
+  color: var(--paper-success) !important;
+}
+
+/* Model feedback uses the paper semantic colors even though the base rules are !important. */
+.app-shell.theme-paper .ai-model-status {
+  color: var(--paper-ink-muted) !important;
+}
+.app-shell.theme-paper .ai-model-status.success {
+  color: var(--paper-success) !important;
+}
+.app-shell.theme-paper .ai-model-status.error {
+  color: var(--paper-danger) !important;
+}
+.app-shell.theme-paper .ai-model-status.loading {
+  color: var(--paper-warning) !important;
+}
+
+/* Asset panel heading icon and label are one color token. */
+.app-shell.theme-paper .asset-panel .assistant-header > div {
+  color: var(--paper-accent-strong) !important;
+}
+.app-shell.theme-paper .asset-panel .assistant-header > div > svg {
+  color: inherit !important;
+}
+.app-shell.theme-paper .sidebar :where(.trash-entry > svg, .story-memory > svg) {
+  color: inherit !important;
 }

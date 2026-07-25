@@ -1,4 +1,4 @@
-import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { lazy, Suspense, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -7,8 +7,9 @@ import UniqueID from '@tiptap/extension-unique-id'
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { isTauri } from '@tauri-apps/api/core'
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog'
 import { readText as readClipboardText, writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager'
 import type { ImportedSection } from './data/documentFormats'
 import { deleteImageAsset, listImageAssets, readImageAsset, saveImageAsset, type ImageAsset } from './data/assetStorage'
@@ -748,6 +749,7 @@ type WritingPreferences = {
   paragraphFocus: boolean
   automaticChecksEnabled: boolean
   automaticMemoryEnabled: boolean
+  projectSavePath: string
 }
 
 type ExportReport = {
@@ -783,6 +785,7 @@ const DEFAULT_PREFERENCES: WritingPreferences = {
   paragraphFocus: false,
   automaticChecksEnabled: true,
   automaticMemoryEnabled: false,
+  projectSavePath: '',
 }
 
 const EDITOR_VIEW_KEY = 'zili-writing-editor-view-v1'
@@ -1024,6 +1027,7 @@ function App() {
     }
   })
   const [unmountedCollapsedVolumes, setUnmountedCollapsedVolumes] = useState<Set<string>>(() => new Set(collapsedVolumes))
+  const [expandedSceneChapters, setExpandedSceneChapters] = useState<Set<string>>(() => new Set())
   const [preferences, setPreferences] = useState<WritingPreferences>(loadPreferences)
   const [aiSettings, setAiSettings] = useState(loadAiSettings)
   const [aiApiKey, setAiApiKey] = useState('')
@@ -1072,6 +1076,8 @@ function App() {
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error'>('idle')
   const [webStorageEstimate, setWebStorageEstimate] = useState<WebStorageEstimate | null>(null)
   const saveTimer = useRef<number | null>(null)
+  const projectBackupTimer = useRef<number | null>(null)
+  const projectBackupBusy = useRef(false)
   const importProgressTimer = useRef<number | null>(null)
   const importInput = useRef<HTMLInputElement | null>(null)
   const imageInput = useRef<HTMLInputElement | null>(null)
@@ -1097,6 +1103,8 @@ function App() {
   const aiEndpointComboboxRef = useRef<HTMLDivElement | null>(null)
   const memoryChapterScrollRef = useRef<HTMLDivElement | null>(null)
   const memoryCandidateListRef = useRef<HTMLDivElement | null>(null)
+  const memoryFilterLockRef = useRef<{ top: number } | null>(null)
+  const memoryFilterRestoringRef = useRef(false)
   const memoryAnalysisController = useRef<AbortController | null>(null)
   const automaticMemoryController = useRef<AbortController | null>(null)
   const projectQuestionController = useRef<AbortController | null>(null)
@@ -3567,6 +3575,13 @@ function App() {
     setContextMenu({ kind: 'input', x: event.clientX, y: event.clientY })
   }
 
+  const lockMemoryFilterPosition = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    const scroll = memoryChapterScrollRef.current
+    const filters = event.currentTarget.closest<HTMLElement>('.memory-filters')
+    if (!scroll || !filters) return
+    memoryFilterLockRef.current = { top: filters.getBoundingClientRect().top }
+  }
+
   const activeChapter =
     project.chapters.find((chapter) => chapter.id === project.activeChapterId) ??
     project.chapters[0] ??
@@ -3846,6 +3861,22 @@ function App() {
   }, [preferences])
 
   useEffect(() => {
+    if (projectBackupTimer.current) window.clearTimeout(projectBackupTimer.current)
+    if (!hydrated || !isTauri() || !preferences.projectSavePath.trim()) return
+    projectBackupTimer.current = window.setTimeout(() => {
+      if (projectBackupBusy.current) return
+      projectBackupBusy.current = true
+      void exportBackup(true).finally(() => {
+        projectBackupBusy.current = false
+      })
+    }, 3000)
+    return () => {
+      if (projectBackupTimer.current) window.clearTimeout(projectBackupTimer.current)
+      projectBackupTimer.current = null
+    }
+  }, [hydrated, preferences.projectSavePath, project])
+
+  useEffect(() => {
     if (aiPermissionState.projectId !== project.id) {
       setAiPermissionState({ projectId: project.id, value: loadAiDataPermissions(project.id) })
     }
@@ -4023,6 +4054,66 @@ function App() {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [assistantOpen, assistantView, memoryBundle.candidates.length, memoryBundle.memory?.id, memoryLoading, memoryScope])
+
+  useLayoutEffect(() => {
+    const lock = memoryFilterLockRef.current
+    if (!lock || !assistantOpen || assistantView !== 'memory' || memoryScope !== 'chapter') return
+    const scroll = memoryChapterScrollRef.current
+    const filters = scroll?.querySelector<HTMLElement>('.memory-filters')
+    if (!scroll || !filters) {
+      memoryFilterLockRef.current = null
+      return
+    }
+    const delta = filters.getBoundingClientRect().top - lock.top
+    if (Math.abs(delta) < 0.5) return
+    memoryFilterRestoringRef.current = true
+    scroll.scrollTop += delta
+    window.requestAnimationFrame(() => {
+      memoryFilterRestoringRef.current = false
+    })
+  }, [assistantOpen, assistantView, expandedMemoryCandidateId, memoryBundle.candidates.length, memoryFilter, memoryLoading, memoryScope])
+
+  useEffect(() => {
+    if (!assistantOpen || assistantView !== 'memory' || memoryScope !== 'chapter') return
+    const scroll = memoryChapterScrollRef.current
+    if (!scroll) return
+    const releaseLock = () => {
+      memoryFilterLockRef.current = null
+    }
+    const restoreLockedPosition = () => {
+      const lock = memoryFilterLockRef.current
+      if (!lock || memoryFilterRestoringRef.current) return
+      const filters = scroll.querySelector<HTMLElement>('.memory-filters')
+      if (!filters) return
+      const delta = filters.getBoundingClientRect().top - lock.top
+      if (Math.abs(delta) < 0.5) return
+      memoryFilterRestoringRef.current = true
+      scroll.scrollTop += delta
+      window.requestAnimationFrame(() => {
+        memoryFilterRestoringRef.current = false
+      })
+    }
+    const releaseOnScrollbarPointer = (event: PointerEvent) => {
+      const bounds = scroll.getBoundingClientRect()
+      if (event.clientX >= bounds.right - 18) releaseLock()
+    }
+    const releaseOnKey = (event: KeyboardEvent) => {
+      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) releaseLock()
+    }
+    scroll.addEventListener('scroll', restoreLockedPosition, { passive: true })
+    scroll.addEventListener('wheel', releaseLock, { passive: true })
+    scroll.addEventListener('touchmove', releaseLock, { passive: true })
+    scroll.addEventListener('pointerdown', releaseOnScrollbarPointer)
+    scroll.addEventListener('keydown', releaseOnKey)
+    return () => {
+      scroll.removeEventListener('scroll', restoreLockedPosition)
+      scroll.removeEventListener('wheel', releaseLock)
+      scroll.removeEventListener('touchmove', releaseLock)
+      scroll.removeEventListener('pointerdown', releaseOnScrollbarPointer)
+      scroll.removeEventListener('keydown', releaseOnKey)
+      memoryFilterLockRef.current = null
+    }
+  }, [assistantOpen, assistantView, memoryScope])
 
   useEffect(() => {
     if (!hydrated || !assistantOpen || assistantView !== 'qa') return
@@ -4604,6 +4695,7 @@ function App() {
       const scene = createScene(chapterId, current.scenes.filter((item) => item.chapterId === chapterId).map((item) => item.title))
       return { ...current, scenes: [...current.scenes, scene], activeSceneId: scene.id }
     })
+    setExpandedSceneChapters((current) => new Set(current).add(chapterId))
     openScenePanel()
     setContextMenu(null)
   }
@@ -4611,6 +4703,11 @@ function App() {
   const openScene = (sceneId: string) => {
     const scene = project.scenes.find((item) => item.id === sceneId)
     if (!scene) return
+    if (scene.id === project.activeSceneId && scenePanelOpen) {
+      void closeScenePanel()
+      setContextMenu(null)
+      return
+    }
     setProject((current) => ({ ...current, activeChapterId: scene.chapterId, activeSceneId: scene.id }))
     openScenePanel()
     setContextMenu(null)
@@ -4717,12 +4814,21 @@ function App() {
     else volumeCollapseTimers.current.set(volumeId, window.setTimeout(finishCollapse, duration))
   }
 
+  const toggleSceneList = (chapterId: string) => {
+    setExpandedSceneChapters((current) => {
+      const next = new Set(current)
+      if (next.has(chapterId)) next.delete(chapterId)
+      else next.add(chapterId)
+      return next
+    })
+  }
+
   const resolveVolumeDelete = async (deleteChapters: boolean) => {
     const volumeId = pendingVolumeDeleteId
-    if (!volumeId || project.volumes.length <= 1) return
+    if (!volumeId) return
     const volume = project.volumes.find((item) => item.id === volumeId)
     const targetVolume = project.volumes.find((item) => item.id !== volumeId)
-    if (!volume || !targetVolume) return
+    if (!volume || (!deleteChapters && !targetVolume)) return
     const affected = project.chapters.filter((chapter) => chapter.volumeId === volumeId)
 
     if (deleteChapters) {
@@ -4742,12 +4848,12 @@ function App() {
       let chapters = deleteChapters
         ? current.chapters.filter((chapter) => chapter.volumeId !== volumeId)
         : current.chapters.map((chapter) => chapter.volumeId === volumeId
-          ? { ...chapter, volumeId: targetVolume.id, updatedAt: Date.now() }
+          ? { ...chapter, volumeId: targetVolume!.id, updatedAt: Date.now() }
           : chapter)
       let scenes = deleteChapters
         ? current.scenes.filter((scene) => !affected.some((chapter) => chapter.id === scene.chapterId))
         : current.scenes
-      if (chapters.length === 0) {
+      if (chapters.length === 0 && targetVolume) {
         const chapterId = crypto.randomUUID()
         chapters = [{
           id: chapterId,
@@ -4760,10 +4866,10 @@ function App() {
       }
       const activeChapterId = chapters.some((chapter) => chapter.id === current.activeChapterId)
         ? current.activeChapterId
-        : chapters[0].id
+        : chapters[0]?.id ?? ''
       const activeSceneId = scenes.some((scene) => scene.id === current.activeSceneId && scene.chapterId === activeChapterId)
         ? current.activeSceneId
-        : scenes.find((scene) => scene.chapterId === activeChapterId)!.id
+        : scenes.find((scene) => scene.chapterId === activeChapterId)?.id ?? ''
       return {
         ...current,
         volumes: current.volumes.filter((item) => item.id !== volumeId),
@@ -4781,6 +4887,11 @@ function App() {
     setCollapsedVolumes((current) => {
       const next = new Set(current)
       next.delete(volumeId)
+      return next
+    })
+    setExpandedSceneChapters((current) => {
+      const next = new Set(current)
+      affected.forEach((chapter) => next.delete(chapter.id))
       return next
     })
     setPendingVolumeDeleteId(null)
@@ -5547,7 +5658,22 @@ function App() {
     setExportReport({ emptyChapters, duplicateVolumeNames, duplicateChapterNames, missingResources })
   }
 
-  const exportBackup = async () => {
+  const chooseProjectSavePath = async () => {
+    if (!isTauri()) {
+      await showAlert('浏览器模式无法访问本机文件夹，请使用导出功能选择保存位置。', '选择保存路径')
+      return
+    }
+    try {
+      const selected = await openDirectoryDialog({ directory: true, multiple: false, title: '选择作品保存文件夹' })
+      if (typeof selected === 'string' && selected.trim()) {
+        setPreferences((current) => ({ ...current, projectSavePath: selected }))
+      }
+    } catch (error) {
+      await showAlert(error instanceof Error ? error.message : '无法选择保存文件夹', '选择保存路径失败')
+    }
+  }
+
+  const exportBackup = async (silent = false) => {
     try {
       const { default: JSZip } = await import('jszip')
       const zip = new JSZip()
@@ -5593,9 +5719,19 @@ function App() {
         zip.file(`references/${reference.id}.${reference.extension}`, await readReferenceText(reference))
       }
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
-      downloadBlob(blob, `${project.title}.zili`)
+      if (isTauri() && preferences.projectSavePath.trim()) {
+        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()))
+        const savedPath = await invoke<string>('save_project_backup', {
+          directory: preferences.projectSavePath.trim(),
+          fileName: `${project.title}.zili`,
+          bytes,
+        })
+        if (!silent) await showAlert(`完整作品备份已保存到：\n${savedPath}`, '备份完成')
+      } else {
+        downloadBlob(blob, `${project.title}.zili`)
+      }
     } catch (error) {
-      await showAlert(error instanceof Error ? error.message : '项目备份失败', '备份失败')
+      if (!silent) await showAlert(error instanceof Error ? error.message : '项目备份失败', '备份失败')
     }
   }
 
@@ -5874,7 +6010,7 @@ function App() {
           }))} />
           <span className="volume-count">{chapterCountByVolume.get(volume.id) ?? 0}</span>
           <button className="icon-button small" disabled={!hasProject} onClick={() => addChapter(volume.id)} title={`在${volume.title}中新建章节`}><Plus size={15} /></button>
-          <button className="icon-button small danger-icon" disabled={project.volumes.length <= 1} onClick={() => setPendingVolumeDeleteId(volume.id)} title="删除卷"><Trash2 size={14} /></button>
+          <button className="icon-button small danger-icon" onClick={() => setPendingVolumeDeleteId(volume.id)} title="删除卷"><Trash2 size={14} /></button>
         </div>
         <div className={`volume-chapters ${collapsedVolumes.has(volume.id) ? 'is-collapsed' : ''}`}>
           <div>
@@ -5885,7 +6021,7 @@ function App() {
                   event.preventDefault(); event.stopPropagation()
                   setContextMenu({ kind: 'chapter', id: chapter.id, x: event.clientX, y: event.clientY })
                 }}>
-                  <button className={`chapter-item ${chapter.id === project.activeChapterId ? 'active' : ''}`} onClick={() => void openChapter(chapter.id)}>
+                  <button className={`chapter-item ${chapter.id === project.activeChapterId ? 'active' : ''}`} onClick={() => void openChapter(chapter.id)} onDoubleClick={() => toggleSceneList(chapter.id)}>
                     <span className="chapter-index">{String(projectIndex + 1).padStart(2, '0')}</span>
                     <span className="chapter-copy"><strong>{chapter.title}</strong><small>{chapter.wordCount} 字</small></span>
                   </button>
@@ -5894,7 +6030,7 @@ function App() {
                     setContextMenu((current) => current?.kind === 'chapter' && current.id === chapter.id ? null : { kind: 'chapter', id: chapter.id, x: rect.right, y: rect.bottom + 4 })
                   }}><MoreHorizontal size={16} /></button>
                 </div>
-                {chapter.id === project.activeChapterId && <div className="scene-list">
+                {chapter.id === project.activeChapterId && <div className={`scene-list ${expandedSceneChapters.has(chapter.id) ? '' : 'is-collapsed'}`}>
                   <div className="scene-list-heading"><span>场景</span><button className="icon-button small" onClick={() => addScene(chapter.id)} title="新建场景"><Plus size={14} /></button></div>
                   {project.scenes.filter((scene) => scene.chapterId === chapter.id).map((scene, sceneIndex) => <div className={`scene-row ${removingIds.has(scene.id) ? 'is-removing' : ''}`} key={scene.id} onContextMenu={(event) => {
                     event.preventDefault(); event.stopPropagation()
@@ -5913,7 +6049,7 @@ function App() {
         </div>
       </section>
     ))
-  }, [chapterCountByVolume, chapterIndexById, collapsedVolumes, deferredNavigationChapters, filteredChaptersByVolume, hasProject, historyOpen, preferences.motionEnabled, project.activeChapterId, project.activeSceneId, project.scenes, project.volumes, removingIds, sidebarOpen, unmountedCollapsedVolumes])
+  }, [chapterCountByVolume, chapterIndexById, collapsedVolumes, deferredNavigationChapters, expandedSceneChapters, filteredChaptersByVolume, hasProject, historyOpen, preferences.motionEnabled, project.activeChapterId, project.activeSceneId, project.scenes, project.volumes, removingIds, scenePanelOpen, sidebarOpen, unmountedCollapsedVolumes])
 
   return (
       <main
@@ -6027,6 +6163,10 @@ function App() {
               {chapterNavigation}
             </div>
             <button className={`story-memory ${assistantOpen && assistantView === 'memory' ? 'active' : ''}`} onClick={() => {
+              if (assistantOpen && assistantView === 'memory') {
+                if (closingUtilityPanel !== 'assistant') void closeUtilityPanel('assistant')
+                return
+              }
               setAssistantView('memory')
               setMemoryScope('chapter')
               setMemoryFilter('candidate')
@@ -6447,7 +6587,7 @@ function App() {
                     </section> : <section className="chapter-memory-summary author-memory-summary"><div><strong>作者补充设定</strong><span>尚未分析本章正文</span></div><p>这里的资料来自作者手动添加或在助手对话中明确确认，不伪装成正文证据。</p></section>}
                     <div className="memory-filters">
                       {([['candidate', '待确认'], ['archived', '自动归档'], ['confirmed', '已确认'], ['stale', '待复核'], ['rejected', '已否决']] as const).map(([status, label]) => (
-                        <button key={status} className={memoryFilter === status ? 'active' : ''} onClick={() => setMemoryFilter(status)}>
+                        <button key={status} className={memoryFilter === status ? 'active' : ''} onMouseDown={lockMemoryFilterPosition} onClick={(event) => { lockMemoryFilterPosition(event); setMemoryFilter(status) }}>
                           {label}<span>{memoryBundle.candidates.filter((candidate) => candidate.status === status).length}</span>
                         </button>
                       ))}
@@ -7381,11 +7521,15 @@ function App() {
             <header><strong>删除“{pendingVolumeDelete.title}”</strong></header>
             <div className="confirm-copy">
               <p>这个卷中有 {project.chapters.filter((chapter) => chapter.volumeId === pendingVolumeDelete.id).length} 个章节。</p>
-              <span>你可以将章节一起移到回收站，或者仅删除卷并把章节自动移动到其他卷。</span>
+              <span>{project.volumes.length === 1
+                ? '这是最后一个卷。删除后，卷及其中章节都会移入回收站。'
+                : '你可以将章节一起移到回收站，或者仅删除卷并把章节自动移动到其他卷。'}</span>
             </div>
             <footer>
               <button className="danger-action" onClick={() => void resolveVolumeDelete(true)}>删除卷和章节</button>
-              <button className="primary-action" onClick={() => void resolveVolumeDelete(false)}>仅删除卷，移动章节</button>
+              {project.volumes.length > 1 && (
+                <button className="primary-action" onClick={() => void resolveVolumeDelete(false)}>仅删除卷，移动章节</button>
+              )}
               <button onClick={() => setPendingVolumeDeleteId(null)}>取消</button>
             </footer>
           </section>
@@ -7429,8 +7573,9 @@ function App() {
         const hasInputSelection = inputMenu && contextInput.current
           ? (contextInput.current.selectionStart ?? 0) !== (contextInput.current.selectionEnd ?? 0)
           : false
+        const estimatedMenuHeight = editorMenu && hasEditorSelection ? 390 : contextMenu.kind === 'chapter' ? 340 : 270
         return (
-          <div className="context-menu" role="menu" style={{ left: Math.max(6, Math.min(contextMenu.x, window.innerWidth - 190)), top: Math.max(6, Math.min(contextMenu.y, window.innerHeight - (editorMenu && hasEditorSelection ? 390 : 270))) }}>
+          <div className="context-menu" role="menu" style={{ left: Math.max(6, Math.min(contextMenu.x, window.innerWidth - 190)), top: Math.max(6, Math.min(contextMenu.y, window.innerHeight - estimatedMenuHeight)) }}>
             {editorMenu && <>
               <button disabled={!editor?.can().undo()} onClick={() => void runEditorMenuAction('undo')}><Undo2 size={15} />撤销</button>
               <button disabled={!editor?.can().redo()} onClick={() => void runEditorMenuAction('redo')}><Redo2 size={15} />重做</button>
@@ -7461,6 +7606,8 @@ function App() {
             </>}
             {chapter && <>
               <button onClick={() => void openChapter(chapter.id)}><FileText size={15} />打开章节</button>
+              <button disabled={chapter.id !== project.activeChapterId} onClick={() => { toggleSceneList(chapter.id); setContextMenu(null) }}><ListTree size={15} />{expandedSceneChapters.has(chapter.id) ? '收起场景' : '显示场景'}</button>
+              <button disabled={chapter.id !== project.activeChapterId} onClick={() => { addScene(chapter.id); setContextMenu(null) }}><Plus size={15} />新建场景</button>
               <button disabled={chapterIndex === 0} onClick={() => moveChapter(chapter.id, -1)}><ArrowUp size={15} />上移</button>
               <button disabled={chapterIndex === project.chapters.length - 1} onClick={() => moveChapter(chapter.id, 1)}><ArrowDown size={15} />下移</button>
               {project.volumes.length > 1 && <label className="move-volume"><span>移动到卷</span><WheelSelect ariaLabel="移动到卷" value={chapter.volumeId} options={project.volumes.map((item) => ({ value: item.id, label: item.title }))} onChange={(value) => moveChapterToVolume(chapter.id, value)} /></label>}
@@ -7475,7 +7622,7 @@ function App() {
             {volume && <>
               <button onClick={() => { toggleVolume(volume.id); setContextMenu(null) }}>{collapsedVolumes.has(volume.id) ? <ChevronRight size={15} /> : <ChevronDown size={15} />}{collapsedVolumes.has(volume.id) ? '展开卷' : '折叠卷'}</button>
               <button disabled={!hasProject} onClick={() => { addChapter(volume.id); setContextMenu(null) }}><Plus size={15} />新建章节</button>
-              <button className="danger" disabled={project.volumes.length <= 1} onClick={() => { setPendingVolumeDeleteId(volume.id); setContextMenu(null) }}><Trash2 size={15} />删除卷</button>
+              <button className="danger" onClick={() => { setPendingVolumeDeleteId(volume.id); setContextMenu(null) }}><Trash2 size={15} />删除卷</button>
             </>}
             {storedProject && <>
               <button onClick={() => { void switchProject(storedProject.id); setContextMenu(null) }}><FolderOpen size={15} />打开作品</button>
@@ -7905,6 +8052,16 @@ function App() {
               <>
                 <div className="setting-row">
                   <span><strong>当前版本</strong><small>v{import.meta.env.VITE_APP_VERSION || __APP_VERSION__}</small></span>
+                </div>
+                <div className="setting-row">
+                  <span><strong>作品保存路径</strong><small className="project-path-value" title={preferences.projectSavePath || '未设置'}>{preferences.projectSavePath || '未设置，备份文件会下载到系统默认位置'}</small></span>
+                  <div className="update-setting-control project-path-control">
+                    <button onClick={() => void chooseProjectSavePath()}>
+                      <FolderOpen size={14} />
+                      {preferences.projectSavePath ? '更改文件夹' : '选择文件夹'}
+                    </button>
+                    {preferences.projectSavePath && <button className="clear-path" onClick={() => setPreferences((current) => ({ ...current, projectSavePath: '' }))}>清除</button>}
+                  </div>
                 </div>
                 {!isTauri() && <div className="setting-row">
                   <span><strong>浏览器本地存储</strong><small>{webStorageEstimate ? `已使用 ${formatStorageBytes(webStorageEstimate.usage)} / ${formatStorageBytes(webStorageEstimate.quota)}` : '正在读取存储状态'}</small></span>
