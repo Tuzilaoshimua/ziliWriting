@@ -8,4 +8,4 @@ dist
 .uploads
 .tauri/update.key
 .tauri/*.key
-.env
+src-tauri/icons/icon-source.*

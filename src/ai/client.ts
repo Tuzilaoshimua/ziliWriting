@@ -553,6 +553,13 @@ function emitStreamProgress(request: AiChatRequest, receivedCharacters: number, 
   }))
 }
 
+/** 主动清除指定任务类型的流式进度条（防止进度条残留） */
+export function clearStreamProgress(taskType: string, projectId?: string | null) {
+  window.dispatchEvent(new CustomEvent('zili-ai-stream-progress', {
+    detail: { taskType, projectId: projectId ?? null, receivedCharacters: 0, active: false },
+  }))
+}
+
 export async function streamChatCompletion(settings: AiSettings, apiKey: string, request: AiChatRequest, onDelta: (text: string) => void): Promise<AiChatResult> {
   let receivedCharacters = 0
   const totalDeadline = Date.now() + settings.totalTimeoutSeconds * 1000

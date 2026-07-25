@@ -492,7 +492,7 @@ button { color: inherit; }
 .memory-manual-form footer { display: flex; justify-content: flex-end; gap: 5px; }
 .memory-manual-form footer button { height: 28px; border: 1px solid #d4d8d4; border-radius: 5px; background: #fff; color: #68706a; padding: 0 9px; font-size: var(--assistant-font-9, 9px); cursor: pointer; }
 .memory-manual-form footer button.confirm { border-color: #b9cbc1; background: #e7f0eb; color: #315d49; }
-.memory-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; color: #67736c; background: #f2f6f3; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
+.memory-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; color: #67736c; background: #e8e5df; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
 .memory-config-notice { margin: 10px 12px 0; border: 1px solid #dcded9; border-radius: 6px; padding: 10px; background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .memory-config-notice span { color: #7f827d; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
 .memory-config-notice button { flex: 0 0 auto; }
@@ -686,7 +686,7 @@ button { color: inherit; }
 .advisor-tabs { height: 40px; flex: 0 0 40px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 6px 12px; border-bottom: 1px solid #e2e2dd; }
 .advisor-tabs button { min-width: 0; border: 0; border-radius: 5px; background: transparent; color: #7b807b; font-size: var(--assistant-font-9, 9px); cursor: pointer; }
 .advisor-tabs button.active { background: #e4ece8; color: var(--accent-strong); font-weight: 650; }
-.advisor-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #f2f6f3; color: #67736c; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
+.advisor-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #e8e5df; color: #67736c; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
 .creative-brief-pane, .outline-pane, .diagnose-pane { min-height: 0; flex: 1; overflow: auto; padding: 10px 12px 20px; }
 .advisor-conversation-history { margin-top: 10px; border-bottom: 1px solid #dfe1dc; padding-bottom: 9px; display: grid; gap: 5px; }
 .advisor-conversation-history > div:first-child { display: flex; align-items: center; justify-content: space-between; }
@@ -743,7 +743,7 @@ button { color: inherit; }
 .advanced-tool-tabs { height: 40px; flex: 0 0 40px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; padding: 6px 10px; border-bottom: 1px solid #e2e2dd; }
 .advanced-tool-tabs button, .advanced-segmented button { min-width: 0; border: 0; border-radius: 5px; background: transparent; color: #7b807b; font-size: var(--assistant-font-9, 9px); cursor: pointer; }
 .advanced-tool-tabs button.active, .advanced-segmented button.active { background: #e4ece8; color: var(--accent-strong); font-weight: 650; }
-.advanced-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #f2f6f3; color: #67736c; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
+.advanced-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #e8e5df; color: #67736c; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
 .advanced-tools-scroll { min-height: 0; flex: 1; overflow: auto; padding: 10px 12px 22px; }
 .advanced-tool-form { padding-bottom: 12px; border-bottom: 1px solid #dfe1dc; }
 .advanced-segmented { height: 31px; margin-bottom: 9px; padding: 3px; border: 1px solid #dedfda; border-radius: 6px; background: #eff0ed; display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; }
@@ -806,7 +806,7 @@ button { color: inherit; }
 .draft-mode-tabs { height: 40px; flex: 0 0 40px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 6px 8px; border-bottom: 1px solid #e2e2dd; }
 .draft-mode-tabs button { min-width: 0; border: 0; border-radius: 5px; background: transparent; color: #7b807b; font-size: var(--assistant-font-8, 8px); cursor: pointer; }
 .draft-mode-tabs button.active { background: #e4ece8; color: var(--accent-strong); font-weight: 650; }
-.draft-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #f2f6f3; color: #67736c; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
+.draft-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #e8e5df; color: #67736c; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
 .draft-scroll-content { min-height: 0; flex: 1; overflow: auto; padding: 10px 12px 22px; }
 .draft-task-form { padding-bottom: 10px; border-bottom: 1px solid #dfe1dc; }
 .draft-anchor-preview { border-left: 2px solid #9bb1a8; padding: 4px 0 4px 8px; }
@@ -864,7 +864,7 @@ button { color: inherit; }
 .review-range-controls { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr); align-items: center; gap: 5px; padding: 7px 12px; border-bottom: 1px solid #e2e2dd; }
 .review-range-controls span { color: #969b96; text-align: center; font-size: var(--assistant-font-8, 8px); }
 .review-range-controls .wheel-select-trigger { height: 30px; color: #545a55; padding: 0 6px; font-size: var(--assistant-font-8, 8px); }
-.review-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #f2f6f3; color: #67736c; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
+.review-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #e8e5df; color: #67736c; font-size: var(--assistant-font-9, 9px); line-height: 1.5; }
 .review-status-tabs { height: 39px; flex: 0 0 39px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 5px 8px; border-bottom: 1px solid #e2e2dd; }
 .review-status-tabs button { min-width: 0; border: 0; border-radius: 4px; background: transparent; color: #7c817c; font-size: var(--assistant-font-8, 8px); cursor: pointer; }
 .review-status-tabs button.active { background: #e9efec; color: #49685e; font-weight: 650; }
@@ -930,7 +930,7 @@ button { color: inherit; }
 .reference-view-tabs { height: 39px; flex: 0 0 39px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 6px 12px; border-bottom: 1px solid #e2e2dd; }
 .reference-view-tabs button { border: 0; border-radius: 5px; background: transparent; color: #7b807b; font-size: var(--ui-font-9, 9px); cursor: pointer; }
 .reference-view-tabs button.active { background: #e4ece8; color: var(--accent-strong); font-weight: 650; }
-.style-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #f2f6f3; color: #67736c; font-size: var(--ui-font-9, 9px); line-height: 1.5; }
+.style-message { flex: 0 0 auto; margin: 0; border-bottom: 1px solid #e5e5e0; padding: 7px 12px; background: #e8e5df; color: #67736c; font-size: var(--ui-font-9, 9px); line-height: 1.5; }
 .style-profile-pane { min-height: 0; flex: 1; overflow: auto; padding: 8px 12px 20px; }
 .style-profile-notice { margin: 2px 0 7px; border-left: 2px solid #9fb3aa; padding: 4px 0 4px 8px; color: #737a75; font-size: var(--ui-font-8, 8px); line-height: 1.55; }
 .style-profile-pane label { display: block; padding: 8px 0; border-bottom: 1px solid #e1e2dd; }
@@ -1171,6 +1171,358 @@ button { color: inherit; }
 .theme-light .volume-heading { background: #f6f7f7; }
 .theme-light .chapter-item.active { background: #e4eeea; }
 .theme-light .paper { background: #fff; }
+
+/* ===== 纸张主题：BG.jpg 纹理铺满整个界面，各区域纯色暖灰 ===== */
+.app-shell.theme-paper {
+  --scrollbar-track: #ddd9d2; --scrollbar-thumb: #bbb7b0; --scrollbar-thumb-hover: #9a9690;
+  isolation: isolate;
+}
+.app-shell.theme-paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: url('/BG.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+/* 主区域：暖灰 #e8e5df */
+.theme-paper .topbar,
+.theme-paper .writing-area,
+.theme-paper .paper,
+.theme-paper .library-modal,
+.theme-paper .confirm-modal,
+.theme-paper .story-memory,
+.theme-paper .ai-task-center { background: #e8e5df; }
+/* 写作设置窗口：稍深暖灰 #dddbd6 */
+.theme-paper .settings-modal { background: #dddbd6; }
+/* 侧边栏类：稍深暖灰 #dddbd6 */
+.theme-paper .sidebar,
+.theme-paper .assistant-panel,
+.theme-paper .history-panel,
+.theme-paper .volume-heading,
+.theme-paper .scene-planning-panel,
+.theme-paper .asset-panel { background: #dddbd6; }
+/* 选中/高亮状态 */
+.theme-paper .chapter-item.active { background: #e8e5df; }
+.theme-paper .scene-item.active { background: #e8e5df; }
+/* 状态栏 */
+.theme-paper .statusbar { background: #dddbd6; }
+/* 启动屏 */
+.theme-paper .startup-screen { background: #e8e5df; }
+/* 空作品状态遮罩 */
+.theme-paper .empty-project-overlay { background: #e8e5df; }
+/* 章节项悬停 */
+.theme-paper .chapter-item:hover { background: #d2d0cb; }
+.theme-paper .scene-item:hover { background: #d2d0cb; }
+/* AI 助手相关 */
+.theme-paper .assistant-context { background: #e8e5df; }
+.theme-paper .assistant-actions button { background: #e8e5df; }
+.theme-paper .assistant-actions button:hover { background: #dcdad5; }
+.theme-paper .wheel-select-trigger { background: #e8e5df; }
+.theme-paper .wheel-select-menu { background: #e2e0da; }
+.theme-paper .agent-conversation-toolbar label { background: #e8e5df; }
+.theme-paper .agent-composer { background: #dddbd6; }
+.theme-paper .agent-status { background: #d8dcdb; }
+.theme-paper .ai-stream-progress { background: #d8dcdb; }
+.theme-paper .agent-task-checklist { background: #e2e0da; }
+.theme-paper .agent-context-chips button { background: #e8e5df; }
+/* Agent 助手操作按钮 hover/active（全局 #e7eeea） */
+.theme-paper .agent-composer-actions button:hover,
+.theme-paper .agent-composer-actions button.active { background: #e8e5df; }
+/* Agent 发送按钮（全局 #e8f0ec） */
+.theme-paper .agent-composer-actions .agent-send { background: #e8e5df; }
+/* 图片素材面板按钮 */
+.theme-paper .asset-toolbar button { background: #d8e0db; }
+.theme-paper .asset-toolbar button:hover { background: #d2dcdb; }
+/* 下拉菜单选中项 */
+.theme-paper .wheel-select-menu button:hover,
+.theme-paper .wheel-select-menu button.is-selected { background: #becdc8; }
+/* 专注模式按钮 */
+.theme-paper .focus-button { background: #e8e5df; }
+.theme-paper .focus-button:hover { background: #dcdad5; }
+/* 通用分段控件 */
+.theme-paper .segmented-control { background: #d8d6d1; }
+.theme-paper .segmented-control button.active { background: #e8e5df; }
+/* 文化取名面板 */
+.theme-paper .offline-naming-segment { background: #d8d6d1; }
+.theme-paper .offline-naming-segment button.active { background: #e8e5df; }
+.theme-paper .offline-naming-form input,
+.theme-paper .offline-naming-form select { background: #e8e5df; }
+.theme-paper .offline-naming-generate { background: #e8e5df; }
+.theme-paper .offline-naming-notice { background: #d8dcdb; }
+.theme-paper .offline-naming-list footer button:hover,
+.theme-paper .offline-naming-list footer button.active { background: #e8e5df; }
+/* 滚动跳转按钮 */
+.theme-paper .document-jump-buttons button { background: #e2e0da; }
+.theme-paper .document-jump-buttons button:hover:not(:disabled) { background: #e8e5df; }
+/* 图标按钮悬停 */
+.theme-paper .icon-button:hover { background: #d2d0cb; }
+.theme-paper .icon-button.active { background: #e8e5df; }
+/* ===== 以下是为纸张主题补充的遗漏覆盖 ===== */
+/* 搜索框 */
+.theme-paper .search-box { background: #e8e5df; }
+/* 下拉菜单/选择框 */
+.theme-paper .move-volume select { background: #e8e5df; }
+.theme-paper .context-menu { background: #e2e0da; }
+.theme-paper .find-panel { background: #e2e0da; }
+/* 查找/替换按钮（全局 #eef2ef） */
+.theme-paper .find-line > button:not(.icon-button) { background: #e8e5df; }
+.theme-paper .find-line > button:not(.icon-button):hover { background: #dcdad5; }
+/* 章节菜单触发器悬停 */
+.theme-paper .chapter-menu-trigger:hover { background: rgba(232, 229, 223, .68); }
+/* 场景规划面板输入框 */
+.theme-paper .scene-planning-panel input,
+.theme-paper .scene-planning-panel textarea { background: #e8e5df; }
+/* 行内审阅提示 */
+.theme-paper .agent-inline-review { background: rgba(232, 229, 223, .96); }
+/* 图片格式工具栏 */
+.theme-paper .image-format-toolbar { background: #e8e5df; }
+.theme-paper .image-align-control button.active { background: #e8e5df; }
+.theme-paper .image-format-toolbar select,
+.theme-paper .image-format-toolbar input { background: #e8e5df; }
+/* AI 助手：推理/工具/上下文检查器 */
+.theme-paper .agent-reasoning { background: #e2e0da; }
+.theme-paper .agent-tools > div { background: #e2e0da; }
+.theme-paper .agent-context-inspector { background: #e2e0da; }
+/* AI 助手：引用/草稿/图片选择器 */
+.theme-paper .agent-citations button { background: #e8e5df; }
+.theme-paper .agent-draft { background: #e8e5df; }
+.theme-paper .agent-image-picker { background: #e2e0da; }
+.theme-paper .agent-image-picker > button { background: #e8e5df; }
+/* 记忆批量进度/手动表单 */
+.theme-paper .memory-batch-progress { background: #e2e0da; }
+.theme-paper .memory-manual-form { background: #e2e0da; }
+.theme-paper .memory-manual-form input,
+.theme-paper .memory-manual-form textarea { background: #e8e5df; }
+.theme-paper .memory-manual-form footer button { background: #e8e5df; }
+/* 记忆配置提示 */
+.theme-paper .memory-config-notice { background: #e8e5df; }
+/* 记忆筛选按钮激活态 */
+.theme-paper .memory-filters button.active { background: #e8e5df; }
+/* 记忆候选静态字段 */
+.theme-paper .memory-candidate-static-field > strong { background: #e2e0da; }
+.theme-paper .memory-candidate .memory-candidate-metadata input { background: #e8e5df; }
+/* 记忆候选输入框悬停/聚焦 */
+.theme-paper .memory-candidate input:hover,
+.theme-paper .memory-candidate textarea:hover,
+.theme-paper .memory-candidate input:focus,
+.theme-paper .memory-candidate textarea:focus { background: #e8e5df; }
+/* 资料属性按钮悬停/激活态 */
+.theme-paper .memory-candidate-details-toggle:hover,
+.theme-paper .memory-candidate-details-toggle.active { background: #e8e5df; }
+/* 项目记忆工具栏输入框 */
+.theme-paper .project-memory-toolbar input { background: #e8e5df; }
+/* 角色详情标签激活态 */
+.theme-paper .character-detail-tabs button.active { background: #e8e5df; }
+/* 角色详情标签悬停态（比选中稍深） */
+.theme-paper .character-detail-tabs button:hover { background: #dcdad5; }
+/* 人物列表卡片悬停态（比选中稍深） */
+.theme-paper .character-directory button:hover { background: #dcdad5; }
+/* 人物列表卡片选中态 */
+.theme-paper .character-directory button.active { background: #e8e5df; }
+/* 记忆生命周期筛选激活态 */
+.theme-paper .memory-lifecycle-filters button.active { background: #e8e5df; }
+/* 章节摘要按钮 */
+.theme-paper .chapter-digest-index button { background: #e2e0da; }
+.theme-paper .chapter-digest-pagination button { background: #e2e0da; }
+/* 项目问答框 */
+.theme-paper .project-question-box { background: #e8e5df; }
+/* AI 对话助手 */
+.theme-paper .ai-conversation-assistant { background: #e8e5df; }
+/* 回答引用按钮 */
+.theme-paper .answer-citations button { background: #e8e5df; }
+/* 创意对话框/大纲生成框/诊断输入 */
+.theme-paper .creative-dialogue-box,
+.theme-paper .outline-generate-box,
+.theme-paper .diagnose-input { background: #e8e5df; }
+/* 创意简介字段悬停/聚焦 */
+.theme-paper .creative-brief-fields textarea:hover,
+.theme-paper .creative-brief-fields textarea:focus { background: #e8e5df; }
+/* 大纲层级按钮激活态 */
+.theme-paper .outline-levels button.active { background: #e8e5df; }
+/* 大纲节点输入框悬停/聚焦 */
+.theme-paper .outline-node > input:hover:not(:disabled),
+.theme-paper .outline-node > textarea:hover:not(:disabled),
+.theme-paper .outline-node > input:focus,
+.theme-paper .outline-node > textarea:focus { background: #e8e5df; }
+/* 顾问方向卡片 */
+.theme-paper .advisor-directions > article { background: #e8e5df; }
+/* 高级工具表单输入框 */
+.theme-paper .advanced-tool-form input,
+.theme-paper .advanced-tool-form textarea,
+.theme-paper .source-card-create input,
+.theme-paper .source-card-create textarea,
+.theme-paper .source-card-list input,
+.theme-paper .source-card-list textarea { background: #e8e5df; }
+/* 素材卡片列表项 */
+.theme-paper .source-card-list > article { background: #e8e5df; }
+/* 高级记录列表按钮 */
+.theme-paper .advanced-record-list > button { background: #e8e5df; }
+/* 高级结果列表/剧情线 */
+.theme-paper .advanced-result-list > article,
+.theme-paper .plot-thread { background: #e8e5df; }
+/* 草稿任务表单 */
+.theme-paper .draft-task-form input[type="number"],
+.theme-paper .draft-task-form textarea { background: #e8e5df; }
+/* 草稿对比工具栏 */
+.theme-paper .draft-compare-toolbar { background: rgba(232, 229, 223, .96); }
+/* 草稿候选 */
+.theme-paper .draft-candidate { background: #e8e5df; }
+/* 审阅问题卡片 */
+.theme-paper .review-issue { background: #e8e5df; }
+/* 风格配置面板悬停/聚焦 */
+.theme-paper .style-profile-pane textarea:hover,
+.theme-paper .style-profile-pane textarea:focus { background: #e8e5df; }
+/* 附件范围选择器 */
+.theme-paper .attachment-scope .wheel-select-trigger { background: #e2e0da; }
+/* 专注状态 */
+.theme-paper .is-focus { background: #e8e5df; }
+/* 项目行悬停 */
+.theme-paper .project-row:hover { background: #d2d0cb; }
+/* 草稿对比模态框 */
+.theme-paper .draft-comparison-modal { background: #e8e5df; }
+.theme-paper .draft-comparison-grid article > footer button { background: #e8e5df; }
+/* 确认模态框底部按钮 */
+.theme-paper .confirm-modal > footer button { background: #e8e5df; }
+.theme-paper .confirm-modal > footer .primary-action { background: #dcdad5; }
+/* 设置面板标签激活态（全局 #e3ebe7） */
+.theme-paper .settings-categories button:hover { background: #e2e0da; }
+.theme-paper .settings-categories button.active { background: #e8e5df; }
+/* 应用对话框 */
+.theme-paper .app-dialog { background: #e8e5df; }
+.theme-paper .app-dialog > footer button { background: #e8e5df; }
+.theme-paper .app-dialog-icon { background: #d8dbd7; }
+/* 新建项目输入框 */
+.theme-paper .new-project-field input { background: #e8e5df; }
+/* 导出模态框 */
+.theme-paper .export-modal { background: #e8e5df; }
+/* AI 端点输入框和下拉 */
+.theme-paper .ai-endpoint-combobox > input { background: #e8e5df; }
+.theme-paper .ai-endpoint-combobox > button { background: #dcdad5; }
+.theme-paper .ai-endpoint-options { background: #e2e0da; }
+.theme-paper .ai-endpoint-options > div:hover,
+.theme-paper .ai-endpoint-options > div.is-selected { background: #e8e5df; }
+/* AI 格式接口（全局 #f3f4f1） */
+.theme-paper .ai-provider-format { background: #e8e5df; }
+/* AI 设置字段输入框 */
+.theme-paper .ai-setting-field > input,
+.theme-paper .ai-key-input { background: #e8e5df; }
+/* AI 模型字段 */
+.theme-paper .ai-model-field > input,
+.theme-paper .ai-model-field > select { background: #e8e5df; }
+.theme-paper .ai-model-field .wheel-select-trigger { background: #e8e5df; }
+/* AI 预算控制输入框 */
+.theme-paper .ai-budget-control input { background: #e8e5df; }
+/* UI 文字颜色控制按钮 */
+.theme-paper .ui-text-color-control button { background: #e8e5df; }
+/* 目标数字输入框 */
+.theme-paper .goal-number-input { background: #e8e5df; }
+/* 场景范围控制按钮 */
+.theme-paper .scene-range-control button { background: #e2e0da; }
+/* 助手触发按钮 */
+.theme-paper .assistant-trigger { background: #e2e0da; }
+/* AI 任务中心触发器悬停 */
+.theme-paper .ai-task-center-trigger:hover,
+.theme-paper .ai-task-center-trigger.is-running { background: #e8e5df; }
+/* AI 任务列表按钮悬停 */
+.theme-paper .ai-task-list article > footer button:hover { background: #e8e5df; }
+/* 助手操作按钮悬停/禁用悬停 */
+.theme-paper .assistant-actions button:hover { background: #dcdad5; }
+.theme-paper .assistant-actions button:disabled:hover { background: #e8e5df; }
+/* 用户消息气泡 */
+.theme-paper .agent-message.user { background: #e8e5df; }
+/* 对话工具栏按钮悬停 */
+.theme-paper .agent-conversation-toolbar > button:hover { background: #e8e5df; }
+/* 引用按钮悬停 */
+.theme-paper .agent-citations button:hover { background: #dcdad5; }
+/* 记忆候选卡片 */
+.theme-paper .agent-memory-candidate { background: #e2e0da; }
+/* 草稿底部接受按钮悬停 */
+.theme-paper .agent-draft > footer button.accept:hover { background: #e8e5df; }
+/* 任务清单头部按钮悬停 */
+.theme-paper .agent-task-checklist > header button:hover { background: #e8e5df; }
+/* 记忆候选操作按钮悬停 */
+.theme-paper .memory-candidate-actions button:hover { background: #e8e5df; }
+/* 项目记忆项按钮悬停 */
+.theme-paper .project-memory-item > button:hover { background: #e8e5df; }
+/* 角色记忆入口按钮悬停 */
+.theme-paper .character-memory-entry > button:hover { background: #e8e5df; }
+/* 角色状态行/故事线/一致性操作按钮悬停 */
+.theme-paper .character-state-row button:hover,
+.theme-paper .story-thread-actions button:hover,
+.theme-paper .memory-consistency-actions button:hover { background: #e8e5df; }
+/* 大纲节点按钮悬停 */
+.theme-paper .outline-node > div button:hover:not(:disabled) { background: #e8e5df; }
+/* 顾问方向底部按钮悬停 */
+.theme-paper .advisor-directions footer button:hover { background: #e8e5df; }
+/* 草稿版本对比区域 */
+.theme-paper .draft-version-comparison section + section { background: #e2e0da; }
+/* 草稿候选底部接受按钮悬停 */
+.theme-paper .draft-candidate > footer button.accept:hover { background: #e8e5df; }
+/* 审阅证据按钮 */
+.theme-paper .review-evidence button { background: #e2e0da; }
+/* 审阅问题底部解决按钮悬停 */
+.theme-paper .review-issue > footer button.resolve:hover { background: #e8e5df; }
+/* 附件图标 */
+.theme-paper .attachment-icon { background: #e8e5df; }
+/* 附件操作按钮悬停 */
+.theme-paper .attachment-actions button:hover { background: #e8e5df; }
+/* 开关滑块 */
+.theme-paper .switch-track > span { background: #e8e5df; }
+/* 窗口控制按钮悬停 */
+.theme-paper .window-control:hover { background: #d2d0cb; }
+/* 回收站入口悬停 */
+.theme-paper .trash-entry:hover { background: #d2d0cb; }
+/* 回收站入口激活态（全局 #dfe7e2） */
+.theme-paper .trash-entry.active { background: #e8e5df; }
+/* 助手空状态按钮（全局 #f4f8f5） */
+.theme-paper .assistant-empty button { background: #e8e5df; }
+/* Agent 检索区域（全局 #f4f7f5） */
+.theme-paper .agent-retrieval { background: #e8e5df; }
+/* 记忆范围标签激活态（全局 #e4ece8） */
+.theme-paper .memory-scope-tabs button.active { background: #e8e5df; }
+/* 记忆范围标签悬停态（比选中稍深） */
+.theme-paper .memory-scope-tabs button:hover { background: #dcdad5; }
+/* 记忆工具栏按钮/配置提示按钮（全局 #f4f8f5） */
+.theme-paper .memory-toolbar > button,
+.theme-paper .memory-config-notice button { background: #e8e5df; }
+/* 记忆范围工具栏按钮（全局 #f4f8f5） */
+.theme-paper .memory-range-toolbar > button { background: #e8e5df; }
+/* 记忆实体合并按钮（全局 #f4f8f5） */
+.theme-paper .memory-entity-merge button { background: #e8e5df; }
+/* 记忆摘要概览（全局 #f4f7f5） */
+.theme-paper .memory-digest-overview { background: #e8e5df; }
+/* 顾问标签激活态（全局 #e4ece8） */
+.theme-paper .advisor-tabs button.active { background: #e8e5df; }
+/* 高级工具标签/分段按钮激活态（全局 #e4ece8） */
+.theme-paper .advanced-tool-tabs button.active,
+.theme-paper .advanced-segmented button.active { background: #e8e5df; }
+/* 草稿模式标签激活态（全局 #e4ece8） */
+.theme-paper .draft-mode-tabs button.active { background: #e8e5df; }
+/* 审阅范围标签激活态（全局 #e4ece8） */
+.theme-paper .review-scope-tabs button.active { background: #e8e5df; }
+/* 审阅工具栏按钮（全局 #f4f8f5） */
+.theme-paper .review-toolbar button { background: #e8e5df; }
+/* 历史操作按钮（全局 #f4f8f5） */
+.theme-paper .history-actions button { background: #e8e5df; }
+/* 素材工具栏按钮（全局 #f4f8f5）→ 已有 #d8e0db，现统一 */
+.theme-paper .asset-toolbar button { background: #e8e5df; }
+.theme-paper .asset-toolbar button:hover { background: #dcdad5; }
+/* 参考视图标签激活态（全局 #e4ece8） */
+.theme-paper .reference-view-tabs button.active { background: #e8e5df; }
+/* 新建项目按钮（全局 #f4f8f5） */
+.theme-paper .new-project { background: #e8e5df; }
+/* AI 获取模型按钮（全局 #f4f8f5） */
+.theme-paper .ai-fetch-models { background: #e8e5df; }
+/* AI 凭证行按钮（全局 #f4f8f5） */
+.theme-paper .ai-credential-row button { background: #e8e5df; }
+/* AI 连接行按钮（全局 #f4f8f5） */
+.theme-paper .ai-connection-row button { background: #e8e5df; }
+/* 更新设置控制按钮（全局 #f4f8f5） */
+.theme-paper .update-setting-control button { background: #e8e5df; }
 
 .theme-dark { color: var(--ui-text-color, #d9dcd9); background: #242724; --accent-strong: #c5d8d0; --accent-muted: #b7cbc3; --scrollbar-track: #202320; --scrollbar-thumb: #515a55; --scrollbar-thumb-hover: #74827b; }
 .theme-dark .topbar { background: #292c29; border-color: #414541; }

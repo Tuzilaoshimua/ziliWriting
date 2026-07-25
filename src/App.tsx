@@ -4022,7 +4022,7 @@ function App() {
       scroll.scrollTo({ top: Math.max(0, targetTop), behavior: preferencesRef.current.motionEnabled ? 'smooth' : 'auto' })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [assistantOpen, assistantView, memoryBundle.candidates.length, memoryBundle.memory?.id, memoryFilter, memoryLoading, memoryScope])
+  }, [assistantOpen, assistantView, memoryBundle.candidates.length, memoryBundle.memory?.id, memoryLoading, memoryScope])
 
   useEffect(() => {
     if (!hydrated || !assistantOpen || assistantView !== 'qa') return
@@ -7903,6 +7903,9 @@ function App() {
               )}
               {settingsCategory === 'application' && (
               <>
+                <div className="setting-row">
+                  <span><strong>当前版本</strong><small>v{import.meta.env.VITE_APP_VERSION || __APP_VERSION__}</small></span>
+                </div>
                 {!isTauri() && <div className="setting-row">
                   <span><strong>浏览器本地存储</strong><small>{webStorageEstimate ? `已使用 ${formatStorageBytes(webStorageEstimate.usage)} / ${formatStorageBytes(webStorageEstimate.quota)}` : '正在读取存储状态'}</small></span>
                   <div className="update-setting-control">

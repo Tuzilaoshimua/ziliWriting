@@ -45,9 +45,16 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": "nsis",
+    "targets": ["nsis"],
     "icon": [
-      "icons/icon.ico"
-    ]
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
+      }
+    }
   }
 }

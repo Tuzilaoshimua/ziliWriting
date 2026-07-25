@@ -11,7 +11,7 @@ import {
   type MemoryLifecycle,
 } from '../data/storyMemoryStorage'
 import type { AiSettings } from './settings'
-import { AiRequestError, chatCompletion, generateStructured } from './client'
+import { AiRequestError, chatCompletion, clearStreamProgress, generateStructured } from './client'
 import { sanitizeCitationClaim, stripInlineEvidenceMarkers } from './citations'
 
 type Passage = {
@@ -445,66 +445,70 @@ export async function analyzeChapterMemory(
 {"summary":"本章摘要","candidates":[{"kind":"character|character_state|location|organization|item|world|event|relationship|dialogue|commitment|secret|plot|claim|foreshadowing","title":"短标题","detail":"资料内容","confidence":0到1,"evidenceNodeId":"原文段落nodeId","evidenceQuote":"该段落中逐字一致的短引文","nature":"objective|witnessed|belief|statement|rumor|dream|inference","knower":"拥有该认知的角色，可空","lifecycle":"active|resolved|superseded|abandoned","storyTime":"故事内时间，可空","storyTimePrecision":"exact|approximate|relative|unknown","participants":"参与人物，顿号分隔","location":"发生地点，可空","affectedScope":"影响的人物、关系、剧情线或世界规则","aliases":["正文明确出现的别名"],"subject":"状态主体或任务负责人，可空","stateAspect":"位置|伤势|能力|持有物|阵营|关系|生死|情绪|认知或其他，可空","stateValue":"本章结束时的状态值，可空","previousStateValue":"正文明确说明的旧状态，可空","responsibleParty":"承诺或任务负责人，可空","target":"承诺、任务、威胁或伏笔指向的目标，可空"}]}
 摘要使用 150 至 300 个汉字并放在 JSON 的第一个字段。只提取对后续创作有持续价值的资料，最多 12 条；detail 不超过 120 个汉字，evidenceQuote 不超过 80 个汉字，所有无内容的可选字段直接省略。character 只记录正文明确说明且相对稳定的身份、别名、外貌、背景、能力、长期动机、说话方式或稳定性格；单次行动、临时情绪和他人评价不得写成稳定人物档案。人物的位置、伤势、能力、持有物、阵营、生死、情绪、认知或当前目标发生变化时使用 character_state，并填写 subject、stateAspect、stateValue；临时情绪只有在本章结束时仍然有效且会影响后续时才记录，不要用 character_state 重复静态人物介绍。人物之间的关系及态度变化使用 relationship，并填写 participants；角色说法、传闻、计划、他人评价和推测使用 claim，不要写成确定事实。推动剧情或带伏笔的原话使用 dialogue，承诺、任务或威胁使用 commitment，尚未公开或知情范围受限的信息使用 secret，剧情线推进或停滞使用 plot。每条候选资料必须有一处直接证据，引文必须从对应段落原样复制。只输出紧凑 JSON，不要输出思考过程、Markdown 或说明。`
   const userPrompt = `作品：${projectTitle}\n章节：${chapter.title}\n章节修订：${chapter.revisionNumber}\n\n${source}`
-  let streamedExtraction = ''
-  const extractionRequest = generateStructured<unknown>(settings, apiKey, {
-    temperature: 0.1,
-    maxTokens: 1800,
-    responseFormat: 'json_object',
-    signal,
-    repairStructuredOutput: false,
-    metadata: { projectId, taskType: 'chapter_memory', promptVersion: '3' },
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-  }, (content) => { streamedExtraction = content }, (response) => {
-    if (!streamedExtraction) streamedExtraction = response.content
-  })
-  const [extractionOutcome] = await Promise.allSettled([extractionRequest])
-  if (signal?.aborted) throw new AiRequestError('AI 请求已停止')
-  const rawResult = extractionOutcome.status === 'fulfilled' ? extractionOutcome.value : null
-  const result = normalizeExtractedMemory(rawResult)
+  try {
+    let streamedExtraction = ''
+    const extractionRequest = generateStructured<unknown>(settings, apiKey, {
+      temperature: 0.1,
+      maxTokens: 1800,
+      responseFormat: 'json_object',
+      signal,
+      repairStructuredOutput: false,
+      metadata: { projectId, taskType: 'chapter_memory', promptVersion: '3' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }, (content) => { streamedExtraction = content }, (response) => {
+      if (!streamedExtraction) streamedExtraction = response.content
+    })
+    const [extractionOutcome] = await Promise.allSettled([extractionRequest])
+    if (signal?.aborted) throw new AiRequestError('AI 请求已停止')
+    const rawResult = extractionOutcome.status === 'fulfilled' ? extractionOutcome.value : null
+    const result = normalizeExtractedMemory(rawResult)
 
-  const extractedCandidates = Array.isArray(result.candidates) ? result.candidates : []
-  let candidates = buildChapterMemoryCandidates(extractedCandidates, passages, chapter)
-  let retryCandidateCount = 0
-  const extractedSummary = recoverChapterSummary(result.summary) || recoverChapterSummary(partialJsonStringField(streamedExtraction, 'summary'))
-  if (candidates.length === 0 && !signal?.aborted) {
-    try {
-      const fallbackCandidates = await requestChapterCandidateFallback(settings, apiKey, projectId, projectTitle, chapter, source, signal)
-      retryCandidateCount = fallbackCandidates.length
-      candidates = buildChapterMemoryCandidates(fallbackCandidates, passages, chapter)
-    } catch (error) {
-      if (signal?.aborted) throw error
-      // The summary can still be useful when the focused candidate audit fails.
+    const extractedCandidates = Array.isArray(result.candidates) ? result.candidates : []
+    let candidates = buildChapterMemoryCandidates(extractedCandidates, passages, chapter)
+    let retryCandidateCount = 0
+    const extractedSummary = recoverChapterSummary(result.summary) || recoverChapterSummary(partialJsonStringField(streamedExtraction, 'summary'))
+    if (candidates.length === 0 && !signal?.aborted) {
+      try {
+        const fallbackCandidates = await requestChapterCandidateFallback(settings, apiKey, projectId, projectTitle, chapter, source, signal)
+        retryCandidateCount = fallbackCandidates.length
+        candidates = buildChapterMemoryCandidates(fallbackCandidates, passages, chapter)
+      } catch (error) {
+        if (signal?.aborted) throw error
+        // The summary can still be useful when the focused candidate audit fails.
+      }
     }
-  }
 
-  const candidateSummaryText = candidates.slice(0, 8).map((candidate) => candidate.detail).join('；').slice(0, 800)
-  const candidateSummary = (candidateSummaryText.match(/[\p{Script=Han}]/gu)?.length ?? 0) >= 60
-    ? recoverChapterSummary(candidateSummaryText)
-    : ''
-  let summary = extractedSummary
-    || candidateSummary
-  if (!summary) {
-    try {
-      summary = await requestChapterSummary(settings, apiKey, projectId, projectTitle, chapter, chapter.plainText, signal)
-    } catch (error) {
-      throw error
+    const candidateSummaryText = candidates.slice(0, 8).map((candidate) => candidate.detail).join('；').slice(0, 800)
+    const candidateSummary = (candidateSummaryText.match(/[\p{Script=Han}]/gu)?.length ?? 0) >= 60
+      ? recoverChapterSummary(candidateSummaryText)
+      : ''
+    let summary = extractedSummary
+      || candidateSummary
+    if (!summary) {
+      try {
+        summary = await requestChapterSummary(settings, apiKey, projectId, projectTitle, chapter, chapter.plainText, signal)
+      } catch (error) {
+        throw error
+      }
     }
-  }
-  if (!summary) {
-    if (extractionOutcome.status === 'rejected' && extractionOutcome.reason instanceof Error) throw extractionOutcome.reason
-    throw new AiRequestError(`AI 返回的结构中仍没有可用章节摘要（${returnedShape(rawResult)}）`)
-  }
-  return {
-    summary,
-    candidates,
-    diagnostics: {
-      initialCandidateCount: extractedCandidates.length,
-      retryCandidateCount,
-      acceptedCandidateCount: candidates.length,
-    },
+    if (!summary) {
+      if (extractionOutcome.status === 'rejected' && extractionOutcome.reason instanceof Error) throw extractionOutcome.reason
+      throw new AiRequestError(`AI 返回的结构中仍没有可用章节摘要（${returnedShape(rawResult)}）`)
+    }
+    return {
+      summary,
+      candidates,
+      diagnostics: {
+        initialCandidateCount: extractedCandidates.length,
+        retryCandidateCount,
+        acceptedCandidateCount: candidates.length,
+      },
+    }
+  } finally {
+    clearStreamProgress('chapter_memory', projectId)
   }
 }
 
