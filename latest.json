@@ -1,0 +1,15 @@
+{
+  "version": "0.3.1",
+  "notes": "请下载下方 assets 中的安装包进行安装。",
+  "pub_date": "2026-07-26T13:43:56.000Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTRLSlF5cGg1ZGIxTGdoNnNJQ3MwTjRRdmJqK0pYTnU0SURRMnN5N0piZDFvelRndDY5eXFuSTFDOHV3S2ZOdmlHTUpjb2VuVS96UGw2c3o3cjNneXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1MDczNDMyCWZpbGU65a2X6YeM5YaZ5L2cXzAuMy4xX3g2NC1zZXR1cC5leGUKck1oZlZBTllsWUEzYzQwR0NndFBJL2w0aVE3RXBFTWU5VUxzUzZJVTgxSGNtMG1mTDJLWEpqVTRwdlp4QnNRZ0FFdDZMTm00L0t1SnFrRVd5bmNwQUE9PQo=",
+      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.3.1/_0.3.1_x64-setup.exe"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTRLSlF5cGg1ZGIxTGdoNnNJQ3MwTjRRdmJqK0pYTnU0SURRMnN5N0piZDFvelRndDY5eXFuSTFDOHV3S2ZOdmlHTUpjb2VuVS96UGw2c3o3cjNneXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1MDczNDMyCWZpbGU65a2X6YeM5YaZ5L2cXzAuMy4xX3g2NC1zZXR1cC5leGUKck1oZlZBTllsWUEzYzQwR0NndFBJL2w0aVE3RXBFTWU5VUxzUzZJVTgxSGNtMG1mTDJLWEpqVTRwdlp4QnNRZ0FFdDZMTm00L0t1SnFrRVd5bmNwQUE9PQo=",
+      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.3.1/_0.3.1_x64-setup.exe"
+    }
+  }
+}
