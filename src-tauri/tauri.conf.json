@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "字里写作",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "identifier": "com.zili.writing",
   "build": {
     "frontendDist": "../dist",
@@ -34,8 +34,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUzMjAwNjZBRUYyRTFCQUYKUldTdkd5N3ZhZ1lnVXg5V1g3ZnNwOWVQVzZ2TEprcnkvdFYybDhoS3Bhb1crMndHcHZEM0tQWXIK",
       "endpoints": [
-        "https://gitee.com/PrincessBride/crafting-words/releases/latest/download/latest.json",
-        "https://github.com/Tuzilaoshimua/ziliWriting/releases/latest/download/latest.json"
+        "https://gitee.com/PrincessBride/crafting-words/raw/master/latest.json"
       ]
     },
     "sql": {

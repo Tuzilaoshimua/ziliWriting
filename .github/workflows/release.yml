@@ -60,29 +60,38 @@ jobs:
             exit 1
           fi
 
-          # 找到 latest.json 和安装包文件
-          latest_json=$(find . -name "latest.json" | head -1)
-          setup_exe=$(find . -name "*-setup.exe" | head -1)
-          setup_sig=$(find . -name "*-setup.exe.sig" | head -1)
-          nsis_zip=$(find . -name "*.nsis.zip" | head -1)
-          nsis_sig=$(find . -name "*.nsis.zip.sig" | head -1)
-          
+          latest_json=$(find . -name "latest.json" -print -quit)
+          setup_exe=$(find . -name "*-setup.exe" -print -quit)
+          setup_sig=$(find . -name "*-setup.exe.sig" -print -quit)
+
           echo "Found files:"
           echo "  latest.json: $latest_json"
           echo "  setup.exe: $setup_exe"
           echo "  setup.exe.sig: $setup_sig"
-          echo "  nsis.zip: $nsis_zip"
-          echo "  nsis.zip.sig: $nsis_sig"
-          
-          # 从 latest.json 中提取版本号作为发布名称
-          if [ -f "$latest_json" ]; then
-            version=$(cat "$latest_json" | grep -o '"version":"[^"]*"' | head -1 | sed 's/"version":"\(.*\)"/\1/')
-          else
-            version=${RELEASE_TAG#v}
+
+          for required_file in "$latest_json" "$setup_exe" "$setup_sig"; do
+            if [ ! -f "$required_file" ]; then
+              echo "::error::Required updater artifact is missing: $required_file"
+              exit 1
+            fi
+          done
+
+          version=$(node -e "const fs=require('fs'); const value=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(value.version || ''));" "$latest_json")
+          if [ -z "$version" ] || [ "v$version" != "$RELEASE_TAG" ]; then
+            echo "::error::Updater metadata version '$version' does not match tag '$RELEASE_TAG'."
+            exit 1
           fi
-          
-          # 创建 Gitee Release
-          release_response=$(curl -s -X POST \
+
+          json_id() {
+            node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { try { const value = JSON.parse(input); process.stdout.write(String(value.id || "")); } catch {} });'
+          }
+
+          json_download_url() {
+            node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { try { const value = JSON.parse(input); process.stdout.write(String(value.browser_download_url || value.download_url || "")); } catch {} });'
+          }
+
+          gitee_api="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
+          release_response=$(curl --silent --show-error -X POST \
             "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases" \
             -H "Content-Type: application/json" \
             -d "{
@@ -92,44 +101,75 @@ jobs:
               \"body\": \"请下载下方 assets 中的安装包进行安装。\",
               \"prerelease\": false
             }")
-          
-          release_id=$(echo "$release_response" | grep -o '"id":[0-9]*' | head -1 | sed 's/"id"://')
-          
+
+          release_id=$(printf '%s' "$release_response" | json_id)
           if [ -z "$release_id" ]; then
-            # 如果创建失败，可能已存在，尝试获取已有的 release
-            release_response=$(curl -s "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases/tags/$RELEASE_TAG?access_token=$GITEE_TOKEN")
-            release_id=$(echo "$release_response" | grep -o '"id":[0-9]*' | head -1 | sed 's/"id"://')
+            release_response=$(curl --fail-with-body --silent --show-error \
+              "$gitee_api/releases/tags/$RELEASE_TAG?access_token=$GITEE_TOKEN")
+            release_id=$(printf '%s' "$release_response" | json_id)
           fi
-          
-          echo "Gitee Release ID: $release_id"
-          
+
           if [ -z "$release_id" ]; then
             echo "::error::Failed to get or create the Gitee release for $RELEASE_TAG."
             echo "Gitee response: $release_response"
             exit 1
           fi
-          
-          # 上传附件函数
+
+          echo "Gitee Release ID: $release_id"
+
           upload_asset() {
             local file_path="$1"
-            local file_name=$(basename "$file_path")
-            if [ -f "$file_path" ]; then
-              echo "Uploading $file_name to Gitee..."
-              curl --fail-with-body --silent --show-error -X POST \
-                "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases/$release_id/attach_files" \
-                -H "Content-Type: multipart/form-data" \
-                -F "access_token=$GITEE_TOKEN" \
-                -F "file=@$file_path" \
-                -F "name=$file_name"
-              echo "Done: $file_name"
-            fi
+            local file_name
+            file_name=$(basename "$file_path")
+            echo "Uploading $file_name to Gitee..." >&2
+            curl --fail-with-body --silent --show-error -X POST \
+              "$gitee_api/releases/$release_id/attach_files" \
+              -H "Content-Type: multipart/form-data" \
+              -F "access_token=$GITEE_TOKEN" \
+              -F "file=@$file_path" \
+              -F "name=$file_name"
           }
-          
-          # 上传所有构建产物
-          upload_asset "$latest_json"
-          upload_asset "$setup_exe"
-          upload_asset "$setup_sig"
-          upload_asset "$nsis_zip"
-          upload_asset "$nsis_sig"
-          
-          echo "Gitee sync completed!"
+
+          setup_response=$(upload_asset "$setup_exe")
+          setup_download_url=$(printf '%s' "$setup_response" | json_download_url)
+          if [ -z "$setup_download_url" ]; then
+            echo "::error::Gitee did not return a public installer download URL."
+            echo "Gitee response: $setup_response"
+            exit 1
+          fi
+          upload_asset "$setup_sig" > /dev/null
+
+          UPDATE_URL="$setup_download_url" node - "$latest_json" <<'NODE'
+          const fs = require('fs')
+          const path = process.argv[2]
+          const metadata = JSON.parse(fs.readFileSync(path, 'utf8'))
+          for (const platform of Object.values(metadata.platforms || {})) {
+            platform.url = process.env.UPDATE_URL
+          }
+          fs.writeFileSync(path, `${JSON.stringify(metadata, null, 2)}\n`)
+          NODE
+
+          upload_asset "$latest_json" > /dev/null
+
+          existing_response=$(curl --silent --show-error \
+            "$gitee_api/contents/latest.json?ref=master&access_token=$GITEE_TOKEN")
+          existing_sha=$(printf '%s' "$existing_response" | node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { try { const value = JSON.parse(input); process.stdout.write(String(value.sha || "")); } catch {} });')
+          latest_content=$(node -e "const fs=require('fs'); process.stdout.write(fs.readFileSync(process.argv[1]).toString('base64'));" "$latest_json")
+          publish_payload=$(GITEE_TOKEN="$GITEE_TOKEN" LATEST_CONTENT="$latest_content" EXISTING_SHA="$existing_sha" RELEASE_TAG="$RELEASE_TAG" node -e '
+            const payload = {
+              access_token: process.env.GITEE_TOKEN,
+              content: process.env.LATEST_CONTENT,
+              message: `chore: publish updater metadata for ${process.env.RELEASE_TAG}`,
+              branch: "master"
+            }
+            if (process.env.EXISTING_SHA) payload.sha = process.env.EXISTING_SHA
+            process.stdout.write(JSON.stringify(payload))
+          ')
+          publish_method=POST
+          if [ -n "$existing_sha" ]; then publish_method=PUT; fi
+          curl --fail-with-body --silent --show-error -X "$publish_method" \
+            "$gitee_api/contents/latest.json" \
+            -H "Content-Type: application/json" \
+            -d "$publish_payload" > /dev/null
+
+          echo "Gitee release and public updater metadata published successfully."
