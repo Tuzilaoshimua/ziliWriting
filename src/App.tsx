@@ -4546,7 +4546,9 @@ function App() {
       }
     } catch (error) {
       setUpdateStatus('error')
-      await showAlert(error instanceof Error ? error.message : '检查更新失败', '检查更新失败')
+      const detail = error instanceof Error ? error.message : String(error)
+      console.error('[Updater] 检查更新失败:', error)
+      await showAlert(`检查更新失败：${detail}`, '检查更新失败')
     }
   }
 
