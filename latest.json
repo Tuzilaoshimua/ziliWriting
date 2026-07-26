@@ -1,15 +1,15 @@
 {
-  "version": "0.3.1",
+  "version": "0.3.2",
   "notes": "请下载下方 assets 中的安装包进行安装。",
-  "pub_date": "2026-07-26T13:43:56.000Z",
+  "pub_date": "2026-07-26T21:35:58.581Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTRLSlF5cGg1ZGIxTGdoNnNJQ3MwTjRRdmJqK0pYTnU0SURRMnN5N0piZDFvelRndDY5eXFuSTFDOHV3S2ZOdmlHTUpjb2VuVS96UGw2c3o3cjNneXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1MDczNDMyCWZpbGU65a2X6YeM5YaZ5L2cXzAuMy4xX3g2NC1zZXR1cC5leGUKck1oZlZBTllsWUEzYzQwR0NndFBJL2w0aVE3RXBFTWU5VUxzUzZJVTgxSGNtMG1mTDJLWEpqVTRwdlp4QnNRZ0FFdDZMTm00L0t1SnFrRVd5bmNwQUE9PQo=",
-      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.3.1/_0.3.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTA2L21BS3l6RHNRNW1aOU45WEgzeUV1OFJMdVh1NDJTNE9FdjllbFlRMFM4eWwwOERxQzRJSFFINTlrQzN4Z0pSZHQ1OWNKOWlDcWtMOUdWOEpOQmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1MTAxNzU2CWZpbGU65a2X6YeM5YaZ5L2cXzAuMy4yX3g2NC1zZXR1cC5leGUKUExuUzdqV1lsWmhJaEwyZDM4RldVeEJuekQrSFRKL2FGS2VubXFURzBHaHNnRW5wWGVCY01zMm9Id01pQTcrRko5QmVzNkU4K0h5SlIrL2pEamVNRGc9PQo=",
+      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.3.2/_0.3.2_x64-setup.exe"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTRLSlF5cGg1ZGIxTGdoNnNJQ3MwTjRRdmJqK0pYTnU0SURRMnN5N0piZDFvelRndDY5eXFuSTFDOHV3S2ZOdmlHTUpjb2VuVS96UGw2c3o3cjNneXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1MDczNDMyCWZpbGU65a2X6YeM5YaZ5L2cXzAuMy4xX3g2NC1zZXR1cC5leGUKck1oZlZBTllsWUEzYzQwR0NndFBJL2w0aVE3RXBFTWU5VUxzUzZJVTgxSGNtMG1mTDJLWEpqVTRwdlp4QnNRZ0FFdDZMTm00L0t1SnFrRVd5bmNwQUE9PQo=",
-      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.3.1/_0.3.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTA2L21BS3l6RHNRNW1aOU45WEgzeUV1OFJMdVh1NDJTNE9FdjllbFlRMFM4eWwwOERxQzRJSFFINTlrQzN4Z0pSZHQ1OWNKOWlDcWtMOUdWOEpOQmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1MTAxNzU2CWZpbGU65a2X6YeM5YaZ5L2cXzAuMy4yX3g2NC1zZXR1cC5leGUKUExuUzdqV1lsWmhJaEwyZDM4RldVeEJuekQrSFRKL2FGS2VubXFURzBHaHNnRW5wWGVCY01zMm9Id01pQTcrRko5QmVzNkU4K0h5SlIrL2pEamVNRGc9PQo=",
+      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.3.2/_0.3.2_x64-setup.exe"
     }
   }
 }
