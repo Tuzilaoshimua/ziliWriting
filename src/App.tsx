@@ -899,6 +899,7 @@ function App() {
   const [focusMode, setFocusMode] = useState(() => localStorage.getItem('zili-writing-focus-mode-v1') === 'true')
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760)
   const [sidebarClosing, setSidebarClosing] = useState(false)
+  const [sidebarToolsOpen, setSidebarToolsOpen] = useState(false)
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [namingOpen, setNamingOpen] = useState(false)
   const [assistantView, setAssistantView] = useState<'assistant' | 'memory' | 'qa' | 'advisor' | 'draft' | 'review' | 'tools' | 'naming'>('assistant')
@@ -1064,6 +1065,9 @@ function App() {
   const [appDialog, setAppDialog] = useState<AppDialogState>(null)
   const [appDialogClosing, setAppDialogClosing] = useState(false)
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
+  const [backupState, setBackupState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [backupMessage, setBackupMessage] = useState('')
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null)
   const [cursorPosition, setCursorPosition] = useState<CursorPosition>({ paragraph: 1, character: 1, selected: 0 })
   const [selectedImage, setSelectedImage] = useState<ImageSettings | null>(null)
@@ -1073,7 +1077,9 @@ function App() {
   const [windowMaximized, setWindowMaximized] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error'>('idle')
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'ready' | 'error'>('idle')
+  const [updateVersion, setUpdateVersion] = useState('')
+  const [updateMessage, setUpdateMessage] = useState('')
   const [webStorageEstimate, setWebStorageEstimate] = useState<WebStorageEstimate | null>(null)
   const saveTimer = useRef<number | null>(null)
   const projectBackupTimer = useRef<number | null>(null)
@@ -3836,6 +3842,7 @@ function App() {
         .then(async () => {
           await webDeleteWhere<{ projectId: string }>('emergencyDrafts', (draft) => draft.projectId === project.id)
           setSaveState('saved')
+          setLastSavedAt(Date.now())
           try {
             const staleChapterIds = await markStaleMemoryCandidates(project)
             if (staleChapterIds.includes(activeChapter.id) && assistantOpen && assistantView === 'memory' && memoryScope === 'chapter') {
@@ -4409,6 +4416,7 @@ function App() {
         else if (settingsOpen) void closeModal('settings')
         else if (libraryOpen) void closeModal('library')
         else if (contextMenu) setContextMenu(null)
+        else if (sidebarToolsOpen) setSidebarToolsOpen(false)
         else if (findOpen) setFindOpen(false)
         else if (assistantOpen) void closeUtilityPanel('assistant')
         else if (historyOpen) void closeUtilityPanel('history')
@@ -4451,7 +4459,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [appDialog, assetsOpen, assistantOpen, attachmentsOpen, contextMenu, findOpen, focusMode, fullscreen, historyOpen, libraryOpen, newProjectDialogOpen, referencesOpen, settingsOpen, trashOpen])
+  }, [appDialog, assetsOpen, assistantOpen, attachmentsOpen, contextMenu, findOpen, focusMode, fullscreen, historyOpen, libraryOpen, newProjectDialogOpen, referencesOpen, settingsOpen, sidebarToolsOpen, trashOpen])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -4527,18 +4535,29 @@ function App() {
     if (!updaterConfigured || updateStatus === 'checking' || updateStatus === 'downloading') return
     try {
       setUpdateStatus('checking')
+      setUpdateMessage('')
       const { check } = await import('@tauri-apps/plugin-updater')
       const update = await check({ timeout: 15000 })
       if (!update) {
         setUpdateStatus('current')
+        setUpdateVersion('')
+        setUpdateMessage('已完成检查，当前已是最新版本')
         return
       }
-      setUpdateStatus('idle')
+      setUpdateStatus('available')
+      setUpdateVersion(update.version)
+      setUpdateMessage(`发现新版本 ${update.version}`)
       const install = await showConfirm(`发现新版本 ${update.version}，现在下载并安装？`, { title: '发现新版本', confirmLabel: '下载并安装' })
-      if (!install) return
+      if (!install) {
+        setUpdateStatus('idle')
+        setUpdateMessage(`已发现新版本 ${update.version}，可稍后重试安装`)
+        return
+      }
       setUpdateStatus('downloading')
+      setUpdateMessage(`正在下载并安装 ${update.version}`)
       await update.downloadAndInstall()
       setUpdateStatus('ready')
+      setUpdateMessage('更新已安装，重启后生效')
       const restart = await showConfirm('更新已经安装，需要重启字里写作以完成更新。', { title: '更新已安装', confirmLabel: '立即重启' })
       if (restart) {
         const { relaunch } = await import('@tauri-apps/plugin-process')
@@ -4547,6 +4566,7 @@ function App() {
     } catch (error) {
       setUpdateStatus('error')
       const detail = error instanceof Error ? error.message : String(error)
+      setUpdateMessage(detail)
       console.error('[Updater] 检查更新失败:', error)
       await showAlert(`检查更新失败：${detail}`, '检查更新失败')
     }
@@ -5676,6 +5696,8 @@ function App() {
   }
 
   const exportBackup = async (silent = false) => {
+    setBackupState('saving')
+    setBackupMessage('正在生成备份')
     try {
       const { default: JSZip } = await import('jszip')
       const zip = new JSZip()
@@ -5732,7 +5754,11 @@ function App() {
       } else {
         downloadBlob(blob, `${project.title}.zili`)
       }
+      setBackupState('saved')
+      setBackupMessage(isTauri() && preferences.projectSavePath.trim() ? '备份已保存到作品路径' : '备份文件已下载')
     } catch (error) {
+      setBackupState('error')
+      setBackupMessage(error instanceof Error ? error.message : '项目备份失败')
       if (!silent) await showAlert(error instanceof Error ? error.message : '项目备份失败', '备份失败')
     }
   }
@@ -6177,26 +6203,39 @@ function App() {
               <BookOpenText size={17} />
               <span><strong>故事记忆</strong><small>整理人物、设定和剧情</small></span>
             </button>
-            <button className={`trash-entry ${namingOpen ? 'active' : ''}`} aria-pressed={namingOpen} onClick={openNaming}>
+            <div className="sidebar-tools">
+              <button
+                className={`sidebar-tools-trigger ${sidebarToolsOpen ? 'active' : ''}`}
+                aria-expanded={sidebarToolsOpen}
+                aria-haspopup="menu"
+                onClick={() => setSidebarToolsOpen((value) => !value)}
+              >
+                <MoreHorizontal size={17} />
+                <span>更多工具</span>
+              </button>
+              {sidebarToolsOpen && <div className="sidebar-tools-menu" role="menu">
+            <button className={`trash-entry ${namingOpen ? 'active' : ''}`} aria-pressed={namingOpen} onClick={() => { setSidebarToolsOpen(false); openNaming() }}>
               <Dices size={16} />
               <span>文化取名</span>
             </button>
-            <button className={`trash-entry ${trashOpen ? 'active' : ''}`} aria-pressed={trashOpen} onClick={() => void openTrash()}>
-              <Trash2 size={16} />
-              <span>回收站</span>
-            </button>
-            <button className={`trash-entry ${assetsOpen ? 'active' : ''}`} aria-pressed={assetsOpen} onClick={() => void openAssets()}>
-              <Images size={16} />
-              <span>图片素材</span>
-            </button>
-            <button className={`trash-entry ${attachmentsOpen ? 'active' : ''}`} aria-pressed={attachmentsOpen} onClick={() => void openAttachments()}>
-              <Paperclip size={16} />
-              <span>附件资料</span>
-            </button>
-            <button className={`trash-entry ${referencesOpen ? 'active' : ''}`} aria-pressed={referencesOpen} onClick={() => void openReferences()}>
+            <button className={`trash-entry ${referencesOpen ? 'active' : ''}`} aria-pressed={referencesOpen} onClick={() => { setSidebarToolsOpen(false); void openReferences() }}>
               <BookOpenText size={16} />
               <span>参考文本</span>
             </button>
+            <button className={`trash-entry ${assetsOpen ? 'active' : ''}`} aria-pressed={assetsOpen} onClick={() => { setSidebarToolsOpen(false); void openAssets() }}>
+              <Images size={16} />
+              <span>图片素材</span>
+            </button>
+            <button className={`trash-entry ${attachmentsOpen ? 'active' : ''}`} aria-pressed={attachmentsOpen} onClick={() => { setSidebarToolsOpen(false); void openAttachments() }}>
+              <Paperclip size={16} />
+              <span>附件资料</span>
+            </button>
+            <button className={`trash-entry ${trashOpen ? 'active' : ''}`} aria-pressed={trashOpen} onClick={() => { setSidebarToolsOpen(false); void openTrash() }}>
+              <Trash2 size={16} />
+              <span>回收站</span>
+            </button>
+              </div>}
+            </div>
           </aside>
         )}
 
@@ -6432,8 +6471,13 @@ function App() {
                 </span>
               )}
               {!focusMode && (
-                <span className={`save-state ${saveState}`}>
+                <span className={`save-state ${saveState}`} title={lastSavedAt ? `最近保存：${new Date(lastSavedAt).toLocaleTimeString()}` : undefined}>
                   {saveState === 'saved' ? '已保存' : saveState === 'saving' ? '保存中' : '保存失败'}
+                </span>
+              )}
+              {!focusMode && backupState !== 'idle' && (
+                <span className={`backup-state ${backupState}`} title={backupMessage}>
+                  {backupState === 'saving' ? '备份中' : backupState === 'saved' ? '备份完成' : '备份失败'}
                 </span>
               )}
               {!preferences.wordGoalEnabled && <span>{wordCount} 字</span>}
@@ -8074,10 +8118,10 @@ function App() {
                   </div>
                 </div>}
                 <div className="setting-row">
-                  <span><strong>桌面更新</strong><small>{!updaterConfigured ? '正式发布配置后启用' : updateStatus === 'checking' ? '正在检查新版本' : updateStatus === 'current' ? '当前已是最新版本' : updateStatus === 'downloading' ? '正在下载并安装' : updateStatus === 'ready' ? '更新已安装' : updateStatus === 'error' ? '上次检查失败' : '检查并安装正式版本更新'}</small></span>
+                  <span><strong>桌面更新</strong><small title={updateMessage || undefined}>{!updaterConfigured ? '正式发布配置后启用' : updateStatus === 'checking' ? '正在检查新版本' : updateStatus === 'available' ? `发现新版本 ${updateVersion}` : updateStatus === 'current' ? '当前已是最新版本' : updateStatus === 'downloading' ? '正在下载并安装' : updateStatus === 'ready' ? '更新已安装' : updateStatus === 'error' ? `检查失败：${updateMessage || '可重试'}` : '检查并安装正式版本更新'}</small></span>
                   <div className="update-setting-control">
-                    <button disabled={!updaterConfigured || updateStatus === 'checking' || updateStatus === 'downloading'} onClick={() => void checkDesktopUpdate()}>
-                      {updateStatus === 'checking' ? '检查中…' : updateStatus === 'downloading' ? '安装中…' : '检查更新'}
+                    <button title={updateMessage || undefined} disabled={!updaterConfigured || updateStatus === 'checking' || updateStatus === 'downloading'} onClick={() => void checkDesktopUpdate()}>
+                      {updateStatus === 'checking' ? '检查中…' : updateStatus === 'downloading' ? '安装中…' : updateStatus === 'error' ? '重试检查' : updateStatus === 'available' ? '重新检查' : '检查更新'}
                     </button>
                   </div>
                 </div>
