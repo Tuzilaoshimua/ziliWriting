@@ -40,7 +40,7 @@ jobs:
           tagName: v__VERSION__
           releaseName: '字里写作 v__VERSION__'
           releaseBody: '请下载下方 assets 中的安装包进行安装。'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
