@@ -1,6 +1,6 @@
 [package]
 name = "zili-writing"
-version = "0.3.1"
+version = "0.3.2"
 description = "A focused, local-first writing workspace"
 authors = ["Zili Writing"]
 license = ""
