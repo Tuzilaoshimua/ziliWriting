@@ -46,6 +46,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Sync release to Gitee
+        shell: bash
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_OWNER: PrincessBride
