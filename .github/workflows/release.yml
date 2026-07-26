@@ -53,9 +53,11 @@ jobs:
           GITEE_REPO: crafting-words
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          set -eu
+
           if [ -z "$GITEE_TOKEN" ]; then
-            echo "GITEE_TOKEN not set, skipping Gitee sync"
-            exit 0
+            echo "::error::GITEE_TOKEN is not configured; Gitee release sync cannot run."
+            exit 1
           fi
 
           # 找到 latest.json 和安装包文件
@@ -102,9 +104,9 @@ jobs:
           echo "Gitee Release ID: $release_id"
           
           if [ -z "$release_id" ]; then
-            echo "Failed to get/create Gitee release"
-            echo "Response: $release_response"
-            exit 0
+            echo "::error::Failed to get or create the Gitee release for $RELEASE_TAG."
+            echo "Gitee response: $release_response"
+            exit 1
           fi
           
           # 上传附件函数
@@ -113,7 +115,7 @@ jobs:
             local file_name=$(basename "$file_path")
             if [ -f "$file_path" ]; then
               echo "Uploading $file_name to Gitee..."
-              curl -s -X POST \
+              curl --fail-with-body --silent --show-error -X POST \
                 "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases/$release_id/attach_files" \
                 -H "Content-Type: multipart/form-data" \
                 -F "access_token=$GITEE_TOKEN" \
