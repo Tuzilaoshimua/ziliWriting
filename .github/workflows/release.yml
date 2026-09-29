@@ -111,22 +111,41 @@ jobs:
           }
 
           gitee_api="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
-          release_response=$(curl --silent --show-error -X POST \
-            "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"access_token\": \"$GITEE_TOKEN\",
-              \"tag_name\": \"$RELEASE_TAG\",
-              \"name\": \"字里写作 v$version\",
-              \"body\": \"请下载下方 assets 中的安装包进行安装。\",
-              \"prerelease\": false
-            }")
 
-          release_id=$(printf '%s' "$release_response" | json_id)
+          # Build the create-release payload with node to keep UTF-8 safe,
+          # and pass access_token via query string (body token is not reliably honored).
+          RELEASE_TAG="$RELEASE_TAG" VERSION="$version" node -e '
+            process.stdout.write(JSON.stringify({
+              tag_name: process.env.RELEASE_TAG,
+              target_commitish: "master",
+              name: `字里写作 v${process.env.VERSION}`,
+              body: "请下载下方 assets 中的安装包进行安装。",
+              prerelease: false
+            }))
+          ' > gitee_release_payload.json
+
+          create_response=$(curl --silent --show-error --write-out $'\n%{http_code}' -X POST \
+            "$gitee_api/releases?access_token=$GITEE_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @gitee_release_payload.json)
+          create_status=$(printf '%s' "$create_response" | tail -n1)
+          create_body=$(printf '%s' "$create_response" | sed '$d')
+          echo "Gitee create release HTTP status: $create_status"
+          echo "Gitee create release response: $create_body"
+
+          release_response="$create_body"
+          release_id=$(printf '%s' "$create_body" | json_id)
+
           if [ -z "$release_id" ]; then
-            release_response=$(curl --fail-with-body --silent --show-error \
+            echo "Create-release did not return an id (may already exist); fetching existing release..."
+            fetch_response=$(curl --silent --show-error --write-out $'\n%{http_code}' \
               "$gitee_api/releases/tags/$RELEASE_TAG?access_token=$GITEE_TOKEN")
-            release_id=$(printf '%s' "$release_response" | json_id)
+            fetch_status=$(printf '%s' "$fetch_response" | tail -n1)
+            fetch_body=$(printf '%s' "$fetch_response" | sed '$d')
+            echo "Gitee fetch release HTTP status: $fetch_status"
+            echo "Gitee fetch release response: $fetch_body"
+            release_response="$fetch_body"
+            release_id=$(printf '%s' "$fetch_body" | json_id)
           fi
 
           if [ -z "$release_id" ]; then
@@ -143,9 +162,7 @@ jobs:
             file_name=$(basename "$file_path")
             echo "Uploading $file_name to Gitee..." >&2
             curl --fail-with-body --silent --show-error -X POST \
-              "$gitee_api/releases/$release_id/attach_files" \
-              -H "Content-Type: multipart/form-data" \
-              -F "access_token=$GITEE_TOKEN" \
+              "$gitee_api/releases/$release_id/attach_files?access_token=$GITEE_TOKEN" \
               -F "file=@$file_path" \
               -F "name=$file_name"
           }
@@ -175,9 +192,8 @@ jobs:
             "$gitee_api/contents/latest.json?ref=master&access_token=$GITEE_TOKEN")
           existing_sha=$(printf '%s' "$existing_response" | node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { try { const value = JSON.parse(input); process.stdout.write(String(value.sha || "")); } catch {} });')
           latest_content=$(node -e "const fs=require('fs'); process.stdout.write(fs.readFileSync(process.argv[1]).toString('base64'));" "$latest_json")
-          publish_payload=$(GITEE_TOKEN="$GITEE_TOKEN" LATEST_CONTENT="$latest_content" EXISTING_SHA="$existing_sha" RELEASE_TAG="$RELEASE_TAG" node -e '
+          publish_payload=$(LATEST_CONTENT="$latest_content" EXISTING_SHA="$existing_sha" RELEASE_TAG="$RELEASE_TAG" node -e '
             const payload = {
-              access_token: process.env.GITEE_TOKEN,
               content: process.env.LATEST_CONTENT,
               message: `chore: publish updater metadata for ${process.env.RELEASE_TAG}`,
               branch: "master"
@@ -188,7 +204,7 @@ jobs:
           publish_method=POST
           if [ -n "$existing_sha" ]; then publish_method=PUT; fi
           curl --fail-with-body --silent --show-error -X "$publish_method" \
-            "$gitee_api/contents/latest.json" \
+            "$gitee_api/contents/latest.json?access_token=$GITEE_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$publish_payload" > /dev/null
 
