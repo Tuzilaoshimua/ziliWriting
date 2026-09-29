@@ -48,6 +48,7 @@ jobs:
       - name: Sync release to Gitee
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_OWNER: PrincessBride
           GITEE_REPO: crafting-words
@@ -61,21 +62,30 @@ jobs:
           fi
 
           bundle_dir="src-tauri/target/release/bundle"
-          latest_json=$(find "$bundle_dir" -maxdepth 2 -type f -name "latest.json" -print -quit)
           setup_exe=$(find "$bundle_dir/nsis" -maxdepth 1 -type f -name "*-setup.exe" -print -quit)
           setup_sig=$(find "$bundle_dir/nsis" -maxdepth 1 -type f -name "*-setup.exe.sig" -print -quit)
 
           echo "Found files:"
-          echo "  latest.json: $latest_json"
           echo "  setup.exe: $setup_exe"
           echo "  setup.exe.sig: $setup_sig"
 
-          for required_file in "$latest_json" "$setup_exe" "$setup_sig"; do
+          for required_file in "$setup_exe" "$setup_sig"; do
             if [ ! -f "$required_file" ]; then
               echo "::error::Required updater artifact is missing: $required_file"
               exit 1
             fi
           done
+
+          # Download latest.json from GitHub Release (tauri-action uploads it there)
+          echo "Downloading latest.json from GitHub Release..."
+          latest_json="latest.json"
+          curl -fSL --fail-with-body -o "$latest_json" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/latest.json"
+
+          if [ ! -f "$latest_json" ] || [ ! -s "$latest_json" ]; then
+            echo "::error::Failed to download latest.json from GitHub Release."
+            exit 1
+          fi
 
           version=$(node -e "const fs=require('fs'); const value=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(value.version || ''));" "$latest_json")
           if [ -z "$version" ] || [ "v$version" != "$RELEASE_TAG" ]; then
