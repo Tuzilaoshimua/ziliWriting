@@ -1,6 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
-import type { AiSettings } from './settings'
+import { acquireBuiltinCredential } from './builtinService'
+import { isBuiltinAgnesProvider, type AiSettings } from './settings'
 import { getAiUsageSummary, recordAiUsage } from '../data/aiUsageStorage'
 
 export type AiChatContentPart =
@@ -199,19 +200,25 @@ function timeoutError(settings: AiSettings, reason: ReturnType<RequestTimeouts['
 }
 
 async function requestJsonOnce<T>(settings: AiSettings, apiKey: string, path: string, init: RequestInit = {}, externalSignal?: AbortSignal, totalDeadline?: number): Promise<T> {
-  if (!apiKey.trim()) throw new AiRequestError('请先填写 API Key')
+  if (!apiKey.trim() && !isBuiltinAgnesProvider(settings)) throw new AiRequestError('请先填写 API Key')
   const timeouts = createRequestTimeouts(settings, externalSignal, totalDeadline)
+  let credential: { apiKey: string; release: (status?: number | null) => void } | null = null
+  let responseStatus: number | null = null
   try {
+    credential = isBuiltinAgnesProvider(settings)
+      ? await acquireBuiltinCredential(settings.builtinRegion, timeouts.controller.signal)
+      : { apiKey: apiKey.trim(), release: () => undefined }
     const transport = isTauri() ? tauriFetch : globalThis.fetch
     const response = await transport(endpoint(settings.baseUrl, path), {
       ...init,
       headers: {
-        Authorization: `Bearer ${apiKey.trim()}`,
+        Authorization: `Bearer ${credential.apiKey}`,
         'Content-Type': 'application/json',
         ...init.headers,
       },
       signal: timeouts.controller.signal,
     })
+    responseStatus = response.status
     timeouts.clearConnectionTimeout()
     const text = await response.text()
     let payload: unknown = null
@@ -226,8 +233,10 @@ async function requestJsonOnce<T>(settings: AiSettings, apiKey: string, path: st
       const error = payload as ErrorPayload | null
       throw new AiRequestError(error?.error?.message || error?.message || `AI 请求失败（HTTP ${response.status}）`, response.status)
     }
+    credential.release(null)
     return payload as T
   } catch (error) {
+    credential?.release(responseStatus ?? (error instanceof AiRequestError ? error.status : null))
     if (error instanceof AiRequestError) throw error
     if (timeouts.controller.signal.aborted) throw timeoutError(settings, timeouts.reason())
     throw new AiRequestError(error instanceof Error ? error.message : '无法连接 AI 服务')
@@ -240,6 +249,11 @@ function retryable(error: unknown) {
   return error instanceof AiRequestError
     && !isModelUnavailableError(error)
     && (error.status === 429 || (error.status !== null && error.status >= 500))
+}
+
+function retryableForSettings(settings: AiSettings, error: unknown) {
+  return retryable(error)
+    || (isBuiltinAgnesProvider(settings) && error instanceof AiRequestError && (error.status === 401 || error.status === 403))
 }
 
 function isModelUnavailableError(error: unknown) {
@@ -272,7 +286,7 @@ async function requestJson<T>(settings: AiSettings, apiKey: string, path: string
       return await requestJsonOnce<T>(settings, apiKey, path, init, externalSignal, totalDeadline)
     } catch (error) {
       lastError = error
-      if (!retryable(error) || attempt === 2 || externalSignal?.aborted) throw error
+      if (!retryableForSettings(settings, error) || attempt === 2 || externalSignal?.aborted) throw error
       await waitForRetry(450 * (2 ** attempt), externalSignal)
     }
   }
@@ -319,6 +333,7 @@ async function enforceDailyTokenBudget(settings: AiSettings, request: AiChatRequ
 }
 
 export async function fetchAiModels(settings: AiSettings, apiKey: string, signal?: AbortSignal): Promise<string[]> {
+  if (isBuiltinAgnesProvider(settings)) return [settings.model.trim()]
   const payload = await requestJson<{ data?: Array<{ id?: string }> }>(settings, apiKey, 'models', { method: 'GET' }, signal)
   return [...new Set((payload.data ?? []).map((model) => model.id?.trim()).filter((model): model is string => Boolean(model)))].sort((a, b) => a.localeCompare(b))
 }
@@ -434,18 +449,24 @@ export async function chatCompletion(settings: AiSettings, apiKey: string, reque
 
 async function streamChatCompletionOnce(settings: AiSettings, apiKey: string, request: AiChatRequest, onDelta: (text: string) => void, totalDeadline?: number): Promise<AiChatResult> {
   if (!settings.model.trim()) throw new AiRequestError('请先填写模型名称')
-  if (!apiKey.trim()) throw new AiRequestError('请先填写 API Key')
+  if (!apiKey.trim() && !isBuiltinAgnesProvider(settings)) throw new AiRequestError('请先填写 API Key')
   await enforceDailyTokenBudget(settings, request)
   const startedAt = Date.now()
   const timeouts = createRequestTimeouts(settings, request.signal, totalDeadline)
+  let credential: { apiKey: string; release: (status?: number | null) => void } | null = null
+  let responseStatus: number | null = null
   try {
+    credential = isBuiltinAgnesProvider(settings)
+      ? await acquireBuiltinCredential(settings.builtinRegion, timeouts.controller.signal)
+      : { apiKey: apiKey.trim(), release: () => undefined }
     const transport = isTauri() ? tauriFetch : globalThis.fetch
     const response = await transport(endpoint(settings.baseUrl, 'chat/completions'), {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey.trim()}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${credential.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: settings.model.trim(), messages: request.messages, temperature: request.temperature ?? 0.3, max_tokens: request.maxTokens ?? 2048, stream: true, stream_options: { include_usage: true }, ...(request.responseFormat ? { response_format: { type: request.responseFormat } } : {}) }),
       signal: timeouts.controller.signal,
     })
+    responseStatus = response.status
     timeouts.resetIdleTimeout()
     if (!response.ok) {
       let message = `AI 请求失败（HTTP ${response.status}）`
@@ -527,9 +548,11 @@ async function streamChatCompletionOnce(settings: AiSettings, apiKey: string, re
     }
     if (!content.trim() && !reasoningContent.trim()) throw new AiEmptyResponseError()
     const result = { content: content.trim(), reasoningContent: reasoningContent.trim(), model: settings.model.trim(), promptTokens, completionTokens }
+    credential.release(null)
     saveUsage(settings, request, startedAt, true, result.model, promptTokens, completionTokens, null)
     return result
   } catch (error) {
+    credential?.release(responseStatus ?? (error instanceof AiRequestError ? error.status : null))
     if (timeouts.controller.signal.aborted) {
       const aborted = timeoutError(settings, timeouts.reason())
       saveUsage(settings, request, startedAt, false, settings.model.trim(), null, null, null)
@@ -577,7 +600,7 @@ export async function streamChatCompletion(settings: AiSettings, apiKey: string,
         }, totalDeadline)
       } catch (error) {
         lastError = error
-        if (!retryable(error) || attemptReceived > 0 || attempt === 2 || request.signal?.aborted) throw error
+        if (!retryableForSettings(activeSettings, error) || attemptReceived > 0 || attempt === 2 || request.signal?.aborted) throw error
         await waitForRetry(450 * (2 ** attempt), request.signal)
       }
     }

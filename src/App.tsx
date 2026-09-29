@@ -15,7 +15,7 @@ import type { ImportedSection } from './data/documentFormats'
 import { deleteImageAsset, listImageAssets, readImageAsset, saveImageAsset, type ImageAsset } from './data/assetStorage'
 import { clearAttachmentScope, deleteAttachment, listAttachments, readAttachment, saveAttachment, updateAttachmentScope, type Attachment, type AttachmentScope } from './data/attachmentStorage'
 import { deleteReferenceText, listReferenceTexts, readReferenceText, saveReferenceText, type ReferenceText } from './data/referenceStorage'
-import { analyzePlainTextImport, splitPlainTextSections } from './data/plainTextImport'
+import { analyzePlainTextImport } from './data/plainTextImport'
 import { fetchAiModels, testAiConnection } from './ai/client'
 import { loadAiDataPermissions, saveAiDataPermissions, type AiDataPermissions } from './ai/privacy'
 import { applyAutomaticMemoryArchival } from './ai/memoryPolicy'
@@ -34,7 +34,7 @@ import {
 import { analyzeChapterMemory, askProjectQuestion, isUsableChapterSummary, MEMORY_KIND_LABELS, proposeAuthorMemoryCandidates, type ProjectAnswer, type ProjectAnswerCitation } from './ai/storyMemory'
 import { requestedChapterRange, requestsChapterMemoryAnalysis, requestsStoryMemoryProposal } from './ai/memoryIntents'
 import { buildAgentMemoryMutationPreviews } from './ai/memoryAgentTools'
-import { createAgentDraftTransaction, markAgentDraftTransactionUndone, validateAgentDraftUndo, type AgentDraftTransaction } from './ai/agentDraftTransactions'
+import { createAgentDraftTransaction, markAgentDraftTransactionUndone, validateAgentDraftUndo } from './ai/agentDraftTransactions'
 import { detectAdvancedAgentIntent, formatAdvancedAgentResult } from './ai/advancedAgentIntents'
 import type { OfflineCulture, OfflineGender, OfflineLocationType, OfflineNameCandidate, OfflineNameKind } from './ai/offlineNaming'
 import {
@@ -88,6 +88,20 @@ import { emptyStyleProfile, loadStyleProfile, saveStyleProfile, type StyleProfil
 import { analyzeStyleProfile } from './ai/styleAssistant'
 import { clearAiUsageLogs, getAiUsageSummary, type AiUsageSummary } from './data/aiUsageStorage'
 import { WheelSelect } from './components/WheelSelect'
+import { AiTaskCenter } from './components/AiTaskCenter'
+import {
+  blobToDataUrl,
+  createScene,
+  createScenesForChapters,
+  escapeHtml,
+  escapeMarkdown,
+  htmlToMarkdown,
+  nextDefaultName,
+  plainText,
+  splitImportedText,
+} from './utils/editorContent'
+import { agentConversationTitle, agentDraftTask, conversationPayload, draftModeLabel } from './utils/aiConversation'
+import { aiProgressLabel, formatElapsedTime, formatStorageBytes, loadEditorViews, saveEditorView, scheduleIdleTask, type StoredEditorView } from './utils/uiStorage'
 import { loadAdvancedAiWorkspace, saveAdvancedAiRecord, saveResearchSourceCard, type AdvancedAiToolKind } from './data/advancedAiStorage'
 import { loadAiBackgroundTasks, saveAiBackgroundTasks, type AiBackgroundTask, type AiTaskKind, type AiTaskStatus } from './data/aiTaskStorage'
 import { deleteAiProjectData, exportAiProjectData, importAiProjectData, type AiProjectData } from './data/aiProjectStorage'
@@ -105,19 +119,25 @@ import {
   type AiConversationMessage,
 } from './data/aiConversationStorage'
 import {
+  BUILTIN_AGNES_MODEL,
+  BUILTIN_AGNES_ENDPOINTS,
   LEGACY_AGNES_PROVIDER_ID,
   clearLegacyAiSettings,
   hasLegacyAgnesAiSettings,
+  isBuiltinAgnesProvider,
   loadAiSettings,
   normalizeAiSettings,
   providerLabel,
   saveAiSettings,
   setRuntimeApiKey,
+  type AiSettings,
   type StoredAiSettings,
 } from './ai/settings'
+import { BUILTIN_API_KEY_SENTINEL } from './ai/builtinService'
 import {
   createRevision,
   createChapterDocument,
+  createEmptyProject,
   exportProjectBackup,
   createInitialProject,
   loadProject,
@@ -155,7 +175,6 @@ import {
   BookOpenText,
   BrainCircuit,
   CheckCircle2,
-  CircleStop,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -226,68 +245,12 @@ type CursorPosition = {
   selected: number
 }
 
-function conversationPayload<T>(message: AiConversationMessage): T | null {
-  if (!message.payloadJson) return null
-  try {
-    return JSON.parse(message.payloadJson) as T
-  } catch {
-    return null
-  }
-}
-
-type AgentDraftTaskMetadata = {
-  source?: string
-  request?: string
-  targetAction?: 'insert' | 'new_chapter'
-  targetChapterTitle?: string
-  acceptedTargetChapterId?: string
-  transaction?: AgentDraftTransaction
-}
-
-function agentDraftTask(candidate: DraftCandidate): AgentDraftTaskMetadata {
-  try {
-    const task = JSON.parse(candidate.taskJson || '{}') as AgentDraftTaskMetadata
-    if (task.targetAction || !task.request || !/(?:新建|新增|创建|另起|单独形成).{0,12}(?:章节|一章|尾声)|(?:第\s*)?\d{1,6}\s*章\s*尾声/.test(task.request)) return task
-    const explicit = task.request.match(/(?:第\s*)?(\d{1,6})\s*章(?:\s*[：:·\-]?\s*([^\n，。；]{1,30}))?/)
-    const subtitle = (explicit?.[2] ?? '')
-      .replace(/[》】)]/g, '')
-      .replace(/(?:并|然后|接着|用来|作为)?(?:续写|扩写|补写|重写|改写|润色|生成|写出|写入|创建候选|作为候选).*$/, '')
-      .trim()
-    return {
-      ...task,
-      targetAction: 'new_chapter',
-      targetChapterTitle: explicit ? `第${explicit[1]}章${subtitle ? ` ${subtitle}` : ''}` : undefined,
-    }
-  } catch {
-    return {}
-  }
-}
-
-function draftModeLabel(candidate: DraftCandidate) {
-  return agentDraftTask(candidate).targetAction === 'new_chapter' ? '新建章节' : DRAFT_MODE_LABELS[candidate.mode]
-}
-
-function agentConversationTitle(message: string) {
-  const source = message
-    .replace(/\[[A-Z][A-Z0-9_]*\]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^(?:我想|我希望|请你?|麻烦你?|能不能|可不可以|可以请你|帮我|请帮我)\s*/, '')
-  if (!source) return '新对话'
-  const scope = source.match(/最后一章|最终章|本章|当前章|第\s*\d{1,6}\s*章|结局|大纲|人物|世界观|故事记忆|回收站|参考文本/)?.[0]?.replace(/\s+/g, '') ?? ''
-  const action = source.match(/扩写|续写|改写|重写|润色|分析|讨论|推演|梳理|检查|总结|查找|寻找|描写|新建/)?.[0] ?? ''
-  const length = source.match(/(?:大概|大约|约)?\s*(\d{2,6})\s*字/)?.[1]
-  const structured = [...new Set([scope, action, length ? `${length}字` : ''].filter(Boolean))].join('')
-  const fallback = source
-    .replace(/^(?:在|从|关于)\s*/, '')
-    .split(/[，。！？；：]/)[0]
-    .replace(/(?:的内容|这件事|这个问题)$/, '')
-    .trim()
-  return Array.from(structured.length >= 4 ? structured : fallback).slice(0, 16).join('') || '新对话'
-}
-
 function normalizeAiEndpoint(value: string) {
   return value.trim().replace(/\/+$/, '')
+}
+
+function aiConnectionIdentity(settings: AiSettings, apiKey: string) {
+  return JSON.stringify([settings, apiKey])
 }
 
 function aiEndpointKey(value: string) {
@@ -588,12 +551,6 @@ type UtilityPanelKind = 'assistant' | 'history' | 'trash' | 'assets' | 'attachme
 type ClosingModalKind = 'library' | 'settings' | 'newProject'
 type SettingsCategory = 'appearance' | 'focus' | 'ai' | 'application'
 
-function plainText(html: string) {
-  const element = document.createElement('div')
-  element.innerHTML = html
-  return element.textContent ?? ''
-}
-
 const chapterWordCountCache = new WeakMap<Chapter, number>()
 
 function chapterWordCount(chapter: Chapter) {
@@ -602,108 +559,6 @@ function chapterWordCount(chapter: Chapter) {
   const count = chapter.plainText.replace(/\s/g, '').length
   chapterWordCountCache.set(chapter, count)
   return count
-}
-
-function escapeHtml(text: string) {
-  const element = document.createElement('div')
-  element.textContent = text
-  return element.innerHTML
-}
-
-function escapeMarkdown(text: string) {
-  return text.replace(/([\\`*_[\]{}<>#+.!|~-])/g, '\\$1')
-}
-
-function htmlToMarkdown(html: string, imageSources: Map<string, string>) {
-  const document = new DOMParser().parseFromString(html, 'text/html')
-  const blocks: string[] = []
-  for (const element of document.body.children) {
-    const image = element instanceof HTMLImageElement ? element : element.querySelector('img')
-    if (image && (element instanceof HTMLImageElement || element.matches('figure') || !element.textContent?.trim())) {
-      const figure = image.closest('figure')
-      const caption = figure?.getAttribute('data-caption') ?? figure?.querySelector('figcaption')?.textContent ?? image.alt
-      blocks.push(`![${escapeMarkdown(caption)}](${imageSources.get(image.src) ?? image.src})`)
-      continue
-    }
-    const text = element.textContent?.trim()
-    if (!text) continue
-    if (element.tagName === 'BLOCKQUOTE') blocks.push(text.split('\n').map((line) => `> ${escapeMarkdown(line)}`).join('\n'))
-    else blocks.push(escapeMarkdown(text))
-  }
-  return blocks.join('\n\n')
-}
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-}
-
-function toChineseNumber(value: number): string {
-  const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九']
-  if (value < 10) return digits[value]
-  if (value < 20) return `十${value % 10 === 0 ? '' : digits[value % 10]}`
-  if (value < 100) return `${digits[Math.floor(value / 10)]}十${value % 10 === 0 ? '' : digits[value % 10]}`
-  if (value < 1000) {
-    const remainder = value % 100
-    return `${digits[Math.floor(value / 100)]}百${remainder === 0 ? '' : remainder < 10 ? `零${digits[remainder]}` : toChineseNumber(remainder)}`
-  }
-  const remainder = value % 1000
-  return `${digits[Math.floor(value / 1000)]}千${remainder === 0 ? '' : remainder < 100 ? `零${toChineseNumber(remainder)}` : toChineseNumber(remainder)}`
-}
-
-function nextDefaultName(existingTitles: string[], unit: '卷' | '章'): string {
-  let sequence = existingTitles.length + 1
-  let candidate = `第${toChineseNumber(sequence)}${unit}`
-  while (existingTitles.includes(candidate)) {
-    sequence += 1
-    candidate = `第${toChineseNumber(sequence)}${unit}`
-  }
-  return candidate
-}
-
-function createScene(chapterId: string, existingTitles: string[] = []): Scene {
-  let sequence = existingTitles.length + 1
-  let title = `场景 ${sequence}`
-  while (existingTitles.includes(title)) {
-    sequence += 1
-    title = `场景 ${sequence}`
-  }
-  return {
-    id: crypto.randomUUID(),
-    chapterId,
-    title,
-    goal: '',
-    notes: '',
-    summary: '',
-    startNodeId: '',
-    endNodeId: '',
-    updatedAt: Date.now(),
-  }
-}
-
-function createScenesForChapters(chapters: Chapter[]) {
-  return chapters.map((chapter) => createScene(chapter.id))
-}
-
-function splitImportedText(text: string, fallbackTitle: string, volumeId: string, headingMode: 'explicit' | 'title-only' | 'single'): Chapter[] {
-  return splitPlainTextSections(text, fallbackTitle, headingMode).map((section) => {
-    const content = section.lines
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
-      .join('')
-    return {
-      id: crypto.randomUUID(),
-      volumeId,
-      title: section.title,
-      ...createChapterDocument(content),
-      updatedAt: Date.now(),
-    }
-  })
 }
 
 async function materializeImportedHtml(
@@ -788,7 +643,6 @@ const DEFAULT_PREFERENCES: WritingPreferences = {
   projectSavePath: '',
 }
 
-const EDITOR_VIEW_KEY = 'zili-writing-editor-view-v1'
 const PROJECT_TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 const loadDocumentFormats = (() => {
@@ -802,7 +656,7 @@ const loadDocumentFormats = (() => {
 const loadOfflineNaming = (() => {
   let promise: Promise<typeof import('./ai/offlineNaming')> | null = null
   return () => {
-    promise ??= import('./ai/offlineNaming')
+    promise ??= import('./ai/offlineNaming').then((module) => module.offlineNamingReady.then(() => module))
     return promise
   }
 })()
@@ -814,60 +668,6 @@ type OfflineCultureOption = {
   label: string
   region: string
   periods: Array<{ id: string; label: string; personData?: 'archaeological' }>
-}
-
-type StoredEditorView = { from: number; to: number; scrollTop: number }
-
-function loadEditorViews(): Record<string, StoredEditorView> {
-  try {
-    return JSON.parse(localStorage.getItem(EDITOR_VIEW_KEY) || '{}') as Record<string, StoredEditorView>
-  } catch {
-    return {}
-  }
-}
-
-function saveEditorView(chapterId: string, update: Partial<StoredEditorView>) {
-  const views = loadEditorViews()
-  const previous = views[chapterId]
-  views[chapterId] = {
-    from: update.from ?? previous?.from ?? 1,
-    to: update.to ?? previous?.to ?? 1,
-    scrollTop: update.scrollTop ?? previous?.scrollTop ?? 0,
-  }
-  const entries = Object.entries(views)
-  if (entries.length > 500) delete views[entries[0][0]]
-  localStorage.setItem(EDITOR_VIEW_KEY, JSON.stringify(views))
-}
-
-function scheduleIdleTask(task: () => void) {
-  if (typeof window.requestIdleCallback === 'function') {
-    const id = window.requestIdleCallback(task, { timeout: 1500 })
-    return () => window.cancelIdleCallback(id)
-  }
-  const id = window.setTimeout(task, 80)
-  return () => window.clearTimeout(id)
-}
-
-function formatElapsedTime(totalSeconds: number) {
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':')
-}
-
-function formatStorageBytes(bytes: number) {
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
-
-function aiProgressLabel(taskType: string) {
-  if (taskType === 'chapter_memory') return '故事资料提取'
-  if (taskType === 'chapter_memory_summary') return '章节摘要'
-  if (taskType.startsWith('chapter_memory')) return '故事记忆'
-  if (taskType.startsWith('writing_agent')) return '字里助手'
-  if (taskType === 'project_qa') return '作品问答'
-  return 'AI 任务'
 }
 
 function loadPreferences(): WritingPreferences {
@@ -894,7 +694,7 @@ function createUiTypographyVariables(uiFontSize: number) {
 }
 
 function App() {
-  const [project, setProject] = useState<ProjectState>(createInitialProject)
+  const [project, setProject] = useState<ProjectState>(createEmptyProject)
   const [hydrated, setHydrated] = useState(false)
   const [focusMode, setFocusMode] = useState(() => localStorage.getItem('zili-writing-focus-mode-v1') === 'true')
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760)
@@ -1086,6 +886,7 @@ function App() {
   const projectBackupBusy = useRef(false)
   const importProgressTimer = useRef<number | null>(null)
   const importInput = useRef<HTMLInputElement | null>(null)
+  const projectImportRequested = useRef(false)
   const imageInput = useRef<HTMLInputElement | null>(null)
   const agentImageInput = useRef<HTMLInputElement | null>(null)
   const attachmentInput = useRef<HTMLInputElement | null>(null)
@@ -1114,14 +915,22 @@ function App() {
   const memoryAnalysisController = useRef<AbortController | null>(null)
   const automaticMemoryController = useRef<AbortController | null>(null)
   const projectQuestionController = useRef<AbortController | null>(null)
+  const offlineNamingSessionRef = useRef(0)
+  const offlineNamingRequestRef = useRef(0)
+  const offlineNamingContextRef = useRef({ projectId: project.id, open: namingOpen })
   const agentController = useRef<AbortController | null>(null)
   const advisorController = useRef<AbortController | null>(null)
   const draftController = useRef<AbortController | null>(null)
   const reviewController = useRef<AbortController | null>(null)
   const styleController = useRef<AbortController | null>(null)
   const aiTasksRef = useRef(aiTasks)
+  const aiSettingsRef = useRef(aiSettings)
+  const aiApiKeyRef = useRef(aiApiKey)
   preferencesRef.current = preferences
   aiTasksRef.current = aiTasks
+  aiSettingsRef.current = aiSettings
+  aiApiKeyRef.current = aiApiKey
+  offlineNamingContextRef.current = { projectId: project.id, open: namingOpen }
 
   useEffect(() => {
     if (isTauri()) return
@@ -1190,17 +999,23 @@ function App() {
   }, [project.id])
 
   useEffect(() => {
+    const sessionId = ++offlineNamingSessionRef.current
     if (!namingOpen) return
     let active = true
     setOfflineNamingLoading(true)
     void loadOfflineNaming().then(async (module) => {
-      if (!active) return
+      if (!active || offlineNamingSessionRef.current !== sessionId) return
       setOfflineCultures(module.getOfflineCultures() as OfflineCultureOption[])
-      setOfflineNameCandidates(await module.loadOfflineNameCandidates(project.id))
+      const candidates = await module.loadOfflineNameCandidates(project.id)
+      if (!active || offlineNamingSessionRef.current !== sessionId) return
+      setOfflineNameCandidates(candidates)
     }).finally(() => {
-      if (active) setOfflineNamingLoading(false)
+      if (active && offlineNamingSessionRef.current === sessionId) setOfflineNamingLoading(false)
     })
-    return () => { active = false }
+    return () => {
+      active = false
+      if (offlineNamingSessionRef.current === sessionId) offlineNamingSessionRef.current += 1
+    }
   }, [namingOpen, project.id])
 
   useEffect(() => {
@@ -1274,6 +1089,9 @@ function App() {
   }
 
   const updateAiApiKey = (value: string) => {
+    if (isBuiltinAgnesProvider(aiSettings)) return
+    aiTestController.current?.abort()
+    aiTestController.current = null
     aiModelController.current?.abort()
     aiModelController.current = null
     aiCredentialLoadSequence.current += 1
@@ -1289,6 +1107,9 @@ function App() {
   }
 
   const updateAiEndpoint = (baseUrl: string) => {
+    if (isBuiltinAgnesProvider(aiSettings)) return
+    aiTestController.current?.abort()
+    aiTestController.current = null
     aiModelController.current?.abort()
     aiModelController.current = null
     setAiSettings((current) => ({
@@ -1304,6 +1125,9 @@ function App() {
   }
 
   const selectAiEndpoint = (baseUrl: string) => {
+    if (isBuiltinAgnesProvider(aiSettings)) return
+    aiTestController.current?.abort()
+    aiTestController.current = null
     const key = aiEndpointKey(baseUrl)
     const rememberedModel = aiSettings.successfulModels[key]
       ?? (key === aiEndpointKey(aiSettings.baseUrl) ? aiSettings.model : '')
@@ -1327,8 +1151,36 @@ function App() {
     }))
   }
 
+  const selectAiProvider = (providerId: 'openai-compatible' | 'builtin-agnes') => {
+    aiTestController.current?.abort()
+    aiTestController.current = null
+    aiModelController.current?.abort()
+    aiModelController.current = null
+    const nextSettings = providerId === 'builtin-agnes'
+      ? normalizeAiSettings({ ...aiSettings, providerId, builtinRegion: aiSettings.builtinRegion })
+      : normalizeAiSettings({ ...aiSettings, providerId, baseUrl: '', model: '' })
+    setAiSettings(nextSettings)
+    setAiModels([])
+    setAiModelStatus('idle')
+    setAiConnectionStatus('idle')
+    setAiConnectionMessage(providerId === 'builtin-agnes' ? '内置服务已选择，可直接测试连接' : '已切换为用户 API，请填写地址和密钥')
+    void restoreAiCredential(nextSettings)
+  }
+
   const restoreAiCredential = async (settings: typeof aiSettings, migrateLegacyAgnes = false) => {
     const sequence = ++aiCredentialLoadSequence.current
+    if (isBuiltinAgnesProvider(settings)) {
+      setAiApiKey(BUILTIN_API_KEY_SENTINEL)
+      setRuntimeApiKey('')
+      setAiCredentialStatus('restored')
+      setAiCredentialMessage('内置服务已启用，密钥池会在本机自动轮询')
+      setAiConnectionStatus('idle')
+      setAiConnectionMessage('尚未测试内置服务连接')
+      setAiModels([BUILTIN_AGNES_MODEL])
+      setAiModelStatus('success')
+      setAiModelMessage(`固定模型：${BUILTIN_AGNES_MODEL}`)
+      return
+    }
     if (!secureCredentialStorageAvailable()) {
       setAiApiKey('')
       setRuntimeApiKey('')
@@ -1374,6 +1226,12 @@ function App() {
   }
 
   const persistAiCredential = async (settings = aiSettings, apiKey = aiApiKey) => {
+    if (isBuiltinAgnesProvider(settings)) {
+      if (secureCredentialStorageAvailable()) await saveAiSettingsCredential(settings)
+      setAiCredentialStatus('saved')
+      setAiCredentialMessage('内置服务配置已保存，密钥由本机密文密钥池管理')
+      return true
+    }
     if (!secureCredentialStorageAvailable()) {
       setAiCredentialStatus('memory')
       setAiCredentialMessage('浏览器模式仅保留当前会话')
@@ -1480,19 +1338,29 @@ function App() {
   const runAiConnectionTest = async () => {
     if (aiConnectionStatus === 'testing') {
       aiTestController.current?.abort()
+      aiTestController.current = null
+      setAiConnectionStatus('idle')
+      setAiConnectionMessage('连接测试已停止')
       return
     }
     const controller = new AbortController()
+    const testedSettings = aiSettings
+    const testedApiKey = aiApiKey
+    const testedIdentity = aiConnectionIdentity(testedSettings, testedApiKey)
+    const isCurrentTest = () => aiTestController.current === controller
+      && !controller.signal.aborted
+      && aiConnectionIdentity(aiSettingsRef.current, aiApiKeyRef.current) === testedIdentity
     aiTestController.current = controller
     setAiConnectionStatus('testing')
-    setAiConnectionMessage(`正在连接 ${providerLabel(aiSettings.providerId)}`)
+    setAiConnectionMessage(`正在连接 ${providerLabel(testedSettings.providerId)}`)
     try {
-      const result = await testAiConnection(aiSettings, aiApiKey, controller.signal)
+      const result = await testAiConnection(testedSettings, testedApiKey, controller.signal)
+      if (!isCurrentTest()) return
       setAiModels(result.models)
-      const selectedModel = result.workingModel ?? aiSettings.model.trim()
+      const selectedModel = result.workingModel ?? testedSettings.model.trim()
       if (result.models.length > 0) {
         setAiModelStatus('success')
-        setAiModelMessage(selectedModel === aiSettings.model.trim()
+        setAiModelMessage(selectedModel === testedSettings.model.trim()
           ? `已获取 ${result.models.length} 个模型`
           : `原模型不可用，已切换为 ${selectedModel}`)
       }
@@ -1504,19 +1372,23 @@ function App() {
       setAiConnectionStatus('success')
       setAiConnectionMessage(modelMessage)
       const connectedSettings = {
-        ...aiSettings,
+        ...testedSettings,
         model: selectedModel,
-        successfulBaseUrls: rememberAiEndpoint(aiSettings.successfulBaseUrls, aiSettings.baseUrl),
-        successfulModels: rememberAiEndpointModel(aiSettings.successfulModels, aiSettings.baseUrl, selectedModel),
+        successfulBaseUrls: rememberAiEndpoint(testedSettings.successfulBaseUrls, testedSettings.baseUrl),
+        successfulModels: rememberAiEndpointModel(testedSettings.successfulModels, testedSettings.baseUrl, selectedModel),
       }
-      setAiSettings((current) => ({
-        ...current,
-        model: aiEndpointKey(current.baseUrl) === aiEndpointKey(aiSettings.baseUrl) ? selectedModel : current.model,
-        successfulBaseUrls: rememberAiEndpoint(current.successfulBaseUrls, aiSettings.baseUrl),
-        successfulModels: rememberAiEndpointModel(current.successfulModels, aiSettings.baseUrl, selectedModel),
-      }))
-      void persistAiCredential(connectedSettings, aiApiKey)
+      setAiSettings((current) => {
+        if (aiApiKeyRef.current !== testedApiKey || aiConnectionIdentity(current, testedApiKey) !== testedIdentity) return current
+        return {
+          ...current,
+          model: aiEndpointKey(current.baseUrl) === aiEndpointKey(testedSettings.baseUrl) ? selectedModel : current.model,
+          successfulBaseUrls: rememberAiEndpoint(current.successfulBaseUrls, testedSettings.baseUrl),
+          successfulModels: rememberAiEndpointModel(current.successfulModels, testedSettings.baseUrl, selectedModel),
+        }
+      })
+      if (isCurrentTest()) void persistAiCredential(connectedSettings, testedApiKey)
     } catch (error) {
+      if (!isCurrentTest()) return
       setAiConnectionStatus('error')
       setAiConnectionMessage(error instanceof Error ? error.message : '连接测试失败')
     } finally {
@@ -2099,6 +1971,13 @@ function App() {
   }, [project.chapters, projectMemoryBundles])
 
   const generateOfflineNameCandidates = async () => {
+    const sessionId = offlineNamingSessionRef.current
+    const requestId = ++offlineNamingRequestRef.current
+    const requestedProjectId = project.id
+    const isCurrentRequest = () => offlineNamingSessionRef.current === sessionId
+      && offlineNamingRequestRef.current === requestId
+      && offlineNamingContextRef.current.projectId === requestedProjectId
+      && offlineNamingContextRef.current.open
     setOfflineNamingLoading(true)
     try {
       const module = await loadOfflineNaming()
@@ -2113,10 +1992,11 @@ function App() {
         count: offlineNameCount,
         exclude: offlineNameUsed,
       })
-      await module.saveOfflineNameCandidates(project.id, generated)
+      await module.saveOfflineNameCandidates(requestedProjectId, generated)
+      if (!isCurrentRequest()) return
       setOfflineNameCandidates(generated)
     } finally {
-      setOfflineNamingLoading(false)
+      if (isCurrentRequest()) setOfflineNamingLoading(false)
     }
   }
 
@@ -3835,7 +3715,7 @@ function App() {
   }, [activeChapter.id, scenePanelOpen, focusMode])
 
   useEffect(() => {
-    if (!hydrated) return
+    if (!hydrated || !project.id) return
     if (saveTimer.current) window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => {
       void saveProject(project)
@@ -3869,7 +3749,7 @@ function App() {
 
   useEffect(() => {
     if (projectBackupTimer.current) window.clearTimeout(projectBackupTimer.current)
-    if (!hydrated || !isTauri() || !preferences.projectSavePath.trim()) return
+    if (!hydrated || !project.id || !isTauri() || !preferences.projectSavePath.trim()) return
     projectBackupTimer.current = window.setTimeout(() => {
       if (projectBackupBusy.current) return
       projectBackupBusy.current = true
@@ -3894,6 +3774,13 @@ function App() {
       saveAiDataPermissions(project.id, aiPermissionState.value)
     }
   }, [aiPermissionState, hydrated, project.id])
+
+  useEffect(() => {
+    if (!isBuiltinAgnesProvider(aiSettings)) return
+    const expectedEndpoint = BUILTIN_AGNES_ENDPOINTS[aiSettings.builtinRegion]
+    if (aiSettings.baseUrl === expectedEndpoint && aiSettings.model === BUILTIN_AGNES_MODEL) return
+    setAiSettings((current) => isBuiltinAgnesProvider(current) ? normalizeAiSettings(current) : current)
+  }, [aiSettings.baseUrl, aiSettings.builtinRegion, aiSettings.model, aiSettings.providerId])
 
   useEffect(() => {
     if (!secureCredentialStorageAvailable()) {
@@ -4251,7 +4138,7 @@ function App() {
   }, [assistantOpen, reviewIssues])
 
   useEffect(() => {
-    if (!hydrated || !preferences.automaticChecksEnabled) return
+    if (!hydrated || !project.id || !preferences.automaticChecksEnabled) return
     const timer = window.setTimeout(() => {
       const issues = runAutomaticChecks(project.id, activeChapter)
       void replaceReviewIssues(project.id, activeChapter.id, 'automatic', issues).then(async () => {
@@ -5117,8 +5004,10 @@ function App() {
     setHydrated(false)
     setSaveState('saving')
     try {
-      await createRevision(activeChapter, '切换作品时自动保存')
-      await saveProject(project)
+      if (project.id) {
+        await createRevision(activeChapter, '切换作品时自动保存')
+        await saveProject(project)
+      }
       const nextProject = await loadProject(projectId)
       setProject(nextProject)
       closeUtilityPanels()
@@ -5151,6 +5040,12 @@ function App() {
     setNewProjectTitle(`未命名作品 ${projects.length + 1}`)
     setClosingModal(null)
     setNewProjectDialogOpen(true)
+  }
+
+  const openProjectImportDialog = () => {
+    if (importProgress?.phase === 'running' || projectSwitchingId !== null) return
+    projectImportRequested.current = true
+    importInput.current?.click()
   }
 
   const openRenameProjectDialog = (projectId: string) => {
@@ -5190,7 +5085,7 @@ function App() {
       if (next) {
         setProject(await loadProject(next.id))
       } else {
-        setProject({ id: '', title: '', volumes: [], chapters: [], scenes: [], activeChapterId: '', activeSceneId: '', deletedAt: null })
+        setProject(createEmptyProject())
       }
     }
     await refreshProjects()
@@ -5794,6 +5689,22 @@ function App() {
     }))
   }
 
+  const formatImportError = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message.trim()) return error.message
+    if (typeof error === 'string' && error.trim()) return error
+    if (error && typeof error === 'object') {
+      const message = 'message' in error && typeof error.message === 'string' ? error.message.trim() : ''
+      if (message) return message
+      try {
+        const serialized = JSON.stringify(error)
+        if (serialized && serialized !== '{}') return serialized
+      } catch {
+        // 某些原生错误对象无法序列化，继续使用通用提示。
+      }
+    }
+    return fallback
+  }
+
   const yieldImportStep = () => new Promise<void>((resolve) => window.setTimeout(resolve, 0))
 
   const createRichImportedChapters = async (
@@ -5942,8 +5853,9 @@ function App() {
         await refreshProjects()
         finishImportProgress(imported.chapters.length, imported.chapters.length, `已导入 ${imported.chapters.length} 章`)
       } catch (error) {
-        failImportProgress(error instanceof Error ? error.message : '工程包导入失败')
-        await showAlert(error instanceof Error ? error.message : String(error || '项目备份导入失败'), '工程包导入失败')
+        const message = formatImportError(error, '工程包导入失败')
+        failImportProgress(message)
+        await showAlert(message, '工程包导入失败')
       }
       return
     }
@@ -5960,8 +5872,9 @@ function App() {
         await refreshProjects()
         finishImportProgress(imported.chapters.length, imported.chapters.length, `已导入 ${imported.chapters.length} 章`)
       } catch (error) {
-        failImportProgress(error instanceof Error ? error.message : '备份导入失败')
-        await showAlert(error instanceof Error ? error.message : '备份导入失败', '备份导入失败')
+        const message = formatImportError(error, '备份导入失败')
+        failImportProgress(message)
+        await showAlert(message, '备份导入失败')
       }
       return
     }
@@ -5975,8 +5888,9 @@ function App() {
         const importedChapters = await createRichImportedChapters(sections, file.name.replace(/\.docx$/i, ''), importedProject?.id, importedProject?.volumes[0].id, (current, total) => reportImportProgress(current, total, `正在准备第 ${current}/${total} 章`))
         await applyImportedChapters(importedChapters, importedProject)
       } catch (error) {
-        failImportProgress(error instanceof Error ? error.message : 'DOCX 导入失败')
-        await showAlert(error instanceof Error ? error.message : 'DOCX 导入失败', 'DOCX 导入失败')
+        const message = formatImportError(error, 'DOCX 导入失败')
+        failImportProgress(message)
+        await showAlert(message, 'DOCX 导入失败')
       }
       return
     }
@@ -5989,8 +5903,9 @@ function App() {
         const importedChapters = await createRichImportedChapters(sections, file.name.replace(/\.epub$/i, ''), importedProject?.id, importedProject?.volumes[0].id, (current, total) => reportImportProgress(current, total, `正在准备第 ${current}/${total} 章`))
         await applyImportedChapters(importedChapters, importedProject)
       } catch (error) {
-        failImportProgress(error instanceof Error ? error.message : 'EPUB 导入失败')
-        await showAlert(error instanceof Error ? error.message : 'EPUB 导入失败', 'EPUB 导入失败')
+        const message = formatImportError(error, 'EPUB 导入失败')
+        failImportProgress(message)
+        await showAlert(message, 'EPUB 导入失败')
       }
       return
     }
@@ -6016,8 +5931,9 @@ function App() {
     await applyImportedChapters(importedChapters, importedProject)
       setSidebarOpen(window.innerWidth > 760)
     } catch (error) {
-      failImportProgress(error instanceof Error ? error.message : '文本导入失败')
-      await showAlert(error instanceof Error ? error.message : '文本导入失败', '文本导入失败')
+      const message = formatImportError(error, '文本导入失败')
+      failImportProgress(message)
+      await showAlert(message, '文本导入失败')
     }
   }
 
@@ -6081,7 +5997,7 @@ function App() {
 
   return (
       <main
-      className={`app-shell theme-${preferences.theme} ${preferences.uiTextColor ? 'has-custom-ui-text' : ''} ${focusMode ? 'is-focus' : ''} ${focusMode && preferences.paragraphFocus ? 'is-paragraph-focus' : ''} font-${preferences.fontFamily} ${preferences.motionEnabled ? 'motion-enabled' : 'motion-disabled'} ${!sidebarOpen && !assistantOpen && !namingOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen ? 'is-wide-editor' : ''}`}
+      className={`app-shell theme-${preferences.theme} ${preferences.uiTextColor ? 'has-custom-ui-text' : ''} ${!project.id ? 'is-empty-project' : ''} ${focusMode ? 'is-focus' : ''} ${focusMode && preferences.paragraphFocus ? 'is-paragraph-focus' : ''} font-${preferences.fontFamily} ${preferences.motionEnabled ? 'motion-enabled' : 'motion-disabled'} ${!sidebarOpen && !assistantOpen && !namingOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen ? 'is-wide-editor' : ''}`}
       style={{
         ...createUiTypographyVariables(preferences.uiFontSize),
         ...(preferences.uiTextColor ? { '--ui-text-color': preferences.uiTextColor } : {}),
@@ -6134,14 +6050,20 @@ function App() {
               onChange={(event) => {
                 const file = event.target.files?.[0]
                 if (file) {
-                  if (/\.zili(?:\.json)?$/i.test(file.name)) void importDocument(file)
+                  const importAsNewProject = projectImportRequested.current
+                  projectImportRequested.current = false
+                  if (importAsNewProject) {
+                    setLibraryOpen(false)
+                    setClosingModal(null)
+                    void importDocument(file, 'new')
+                  } else if (/\.zili(?:\.json)?$/i.test(file.name)) void importDocument(file)
                   else if (!hasProject) void importDocument(file, 'new')
                   else setPendingDocumentImport(file)
                 }
                 event.target.value = ''
               }}
             />
-            <button className="icon-button" disabled={importProgress?.phase === 'running'} title="导入 TXT 或 Markdown" aria-label="导入" onClick={() => importInput.current?.click()}>
+            <button className="icon-button" disabled={importProgress?.phase === 'running'} title="导入 TXT 或 Markdown" aria-label="导入" onClick={() => { projectImportRequested.current = false; importInput.current?.click() }}>
               <Import size={18} />
             </button>
             <button className="icon-button" title="导出文档" aria-label="导出" onClick={() => void openExportDialog()}>
@@ -6535,31 +6457,15 @@ function App() {
               <span>字里助手</span>
             </button>
           )}
-          {aiTaskCenterOpen && (
-            <section className="ai-task-center" aria-label="AI 任务中心">
-              <header>
-                <div><ListTodo size={15} /><strong>AI 任务</strong></div>
-                <button className="icon-button small" title="关闭任务中心" onClick={() => setAiTaskCenterOpen(false)}><X size={15} /></button>
-              </header>
-              <div className="ai-task-list">
-                {aiTasks.length === 0 && <p>还没有 AI 任务</p>}
-                {aiTasks.slice(0, 12).map((task) => <article className={task.status} key={task.id}>
-                  <div className="ai-task-icon">{task.status === 'running' ? <RefreshCw size={14} /> : task.status === 'completed' ? <CheckCircle2 size={14} /> : task.status === 'cancelled' ? <CircleStop size={14} /> : <AlertTriangle size={14} />}</div>
-                  <div>
-                    <strong>{task.label}</strong>
-                    <span>{task.detail}</span>
-                    <small>{task.status === 'running' ? '进行中' : task.status === 'completed' ? '已完成' : task.status === 'cancelled' ? '已停止' : task.status === 'interrupted' ? '上次运行已中断' : '失败'} · {new Date(task.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</small>
-                    {task.progress !== null && <i><b style={{ width: `${Math.max(0, Math.min(1, task.progress)) * 100}%` }} /></i>}
-                  </div>
-                  <footer>
-                    {task.status === 'running' && <button title="停止任务" onClick={() => stopAiTask(task)}><Square size={12} /></button>}
-                    {['failed', 'cancelled', 'interrupted'].includes(task.status) && task.retryInput && <button title="重试任务" disabled={agentBusy} onClick={() => retryAiTask(task)}><RefreshCw size={12} /></button>}
-                  </footer>
-                </article>)}
-              </div>
-              {aiTasks.some((task) => task.status !== 'running') && <footer><button onClick={() => replaceAiTasks((current) => current.filter((task) => task.status === 'running'))}>清除已结束任务</button></footer>}
-            </section>
-          )}
+          <AiTaskCenter
+            open={aiTaskCenterOpen}
+            tasks={aiTasks}
+            agentBusy={agentBusy}
+            onClose={() => setAiTaskCenterOpen(false)}
+            onStop={stopAiTask}
+            onRetry={retryAiTask}
+            onClearCompleted={() => replaceAiTasks((current) => current.filter((task) => task.status === 'running'))}
+          />
         </section>
 
         {(assistantOpen || namingOpen) && (
@@ -6577,7 +6483,7 @@ function App() {
               <strong>{assistantView === 'qa' || assistantView === 'tools' || (assistantView === 'review' && ['range', 'project'].includes(reviewScope)) ? project.title : activeChapter.title}</strong>
               <span>{assistantView === 'qa' || assistantView === 'tools' || (assistantView === 'review' && ['range', 'project'].includes(reviewScope)) ? `${project.chapters.length} 章 · 当前 ${activeChapter.title}` : `${wordCount} 字 · ${activeScene?.title ?? '本章正文'}`}</span>
             </div>}
-            {assistantView !== 'naming' && <div className="ai-data-scope">
+            {assistantView !== 'naming' && !isBuiltinAgnesProvider(aiSettings) && <div className="ai-data-scope">
               <div><span>当前模型</span><small title={aiSettings.model || '尚未配置模型'}>{aiSettings.model || '尚未配置'}</small></div>
             </div>}
             {Object.entries(aiStreamProgressByTask).map(([taskType, receivedCharacters]) => <div className="ai-stream-progress" key={taskType}><RefreshCw size={12} />{aiProgressLabel(taskType)} · {receivedCharacters > 0 ? `正在接收并校验 · ${receivedCharacters.toLocaleString('zh-CN')} 字符` : '正在等待模型开始返回'}</div>)}
@@ -7494,7 +7400,8 @@ function App() {
               ))}
             </div>
             {!projectTrashView && <footer>
-              <button className="new-project" onClick={openNewProjectDialog}><Plus size={17} />新建作品</button>
+              <button className="new-project" disabled={projectSwitchingId !== null || importProgress?.phase === 'running'} onClick={openProjectImportDialog}><Import size={17} />导入作品</button>
+              <button className="new-project" disabled={projectSwitchingId !== null || importProgress?.phase === 'running'} onClick={openNewProjectDialog}><Plus size={17} />新建作品</button>
             </footer>}
           </section>
         </div>
@@ -7871,10 +7778,20 @@ function App() {
               {settingsCategory === 'ai' && (
                 <div className="ai-settings-form">
                   <div className="ai-setting-field">
-                    <span><strong>接口格式</strong><small>支持 Agnes 及其他 OpenAI 兼容服务</small></span>
-                    <span className="ai-provider-format">OpenAI 兼容接口</span>
+                    <span><strong>AI 服务</strong><small>可使用本机内置服务，或填写自己的 OpenAI 兼容 API</small></span>
+                    <WheelSelect
+                      className="ai-service-select"
+                      ariaLabel="AI 服务"
+                      value={aiSettings.providerId}
+                      options={[{ value: 'builtin-agnes', label: '内置服务' }, { value: 'openai-compatible', label: '用户 API' }]}
+                      onChange={(value) => selectAiProvider(value as 'openai-compatible' | 'builtin-agnes')}
+                    />
                   </div>
-                  <div className="ai-setting-field">
+                  {!isBuiltinAgnesProvider(aiSettings) && <div className="ai-setting-field">
+                    <span><strong>接口格式</strong><small>支持 Agnes 及其他 OpenAI 兼容服务</small></span>
+                    <span className="ai-provider-format">{providerLabel(aiSettings.providerId)}</span>
+                  </div>}
+                  {!isBuiltinAgnesProvider(aiSettings) && <div className="ai-setting-field">
                     <span><strong>API 地址</strong><small>连接成功后自动加入备选</small></span>
                     <div className="ai-endpoint-combobox" ref={aiEndpointComboboxRef}>
                       <input
@@ -7928,8 +7845,8 @@ function App() {
                         </div>
                       )}
                     </div>
-                  </div>
-                  <div className="ai-setting-field">
+                  </div>}
+                  {!isBuiltinAgnesProvider(aiSettings) && <div className="ai-setting-field">
                     <span><strong>模型</strong><small>用于摘要、问答和创作分析</small></span>
                     <div className="ai-model-field">
                       {aiModels.length > 0 ? (
@@ -7966,30 +7883,32 @@ function App() {
                       </button>
                       <small className={`ai-model-status ${aiModelStatus}`}>{aiModelMessage}</small>
                     </div>
-                  </div>
-                  <label className="ai-setting-field">
-                    <span><strong>API Key</strong><small>{secureCredentialStorageAvailable() ? 'AI 配置与密钥均由 Windows 凭据管理器加密保存' : '浏览器模式仅保留当前会话'}</small></span>
-                    <span className="ai-key-input">
-                      <KeyRound size={15} />
-                      <input
-                        type="password"
-                        value={aiApiKey}
-                        placeholder="输入 API Key"
-                        autoComplete="off"
-                        onContextMenu={openInputContextMenu}
-                        onChange={(event) => updateAiApiKey(event.target.value)}
-                      />
-                    </span>
-                  </label>
-                  <div className="ai-credential-row">
-                    <span className={`ai-credential-status ${aiCredentialStatus}`}><KeyRound size={13} />{aiCredentialMessage}</span>
-                    {secureCredentialStorageAvailable() && <div>
-                      <button disabled={aiCredentialStatus === 'loading' || aiCredentialStatus === 'saving' || !aiApiKey.trim()} onClick={() => void persistAiCredential()}>
-                        {aiCredentialStatus === 'saving' ? '处理中' : '安全保存配置'}
-                      </button>
-                      <button className="danger" disabled={aiCredentialStatus === 'loading' || aiCredentialStatus === 'saving'} onClick={() => void forgetAiCredential()}>删除密钥</button>
-                    </div>}
-                  </div>
+                  </div>}
+                  {!isBuiltinAgnesProvider(aiSettings) && <>
+                    <label className="ai-setting-field">
+                      <span><strong>API Key</strong><small>{secureCredentialStorageAvailable() ? 'AI 配置与密钥均由 Windows 凭据管理器加密保存' : '浏览器模式仅保留当前会话'}</small></span>
+                      <span className="ai-key-input">
+                        <KeyRound size={15} />
+                        <input
+                          type="password"
+                          value={aiApiKey}
+                          placeholder="输入 API Key"
+                          autoComplete="off"
+                          onContextMenu={openInputContextMenu}
+                          onChange={(event) => updateAiApiKey(event.target.value)}
+                        />
+                      </span>
+                    </label>
+                    <div className="ai-credential-row">
+                      <span className={`ai-credential-status ${aiCredentialStatus}`}><KeyRound size={13} />{aiCredentialMessage}</span>
+                      {secureCredentialStorageAvailable() && <div>
+                        <button disabled={aiCredentialStatus === 'loading' || aiCredentialStatus === 'saving' || !aiApiKey.trim()} onClick={() => void persistAiCredential()}>
+                          {aiCredentialStatus === 'saving' ? '处理中' : '安全保存配置'}
+                        </button>
+                        <button className="danger" disabled={aiCredentialStatus === 'loading' || aiCredentialStatus === 'saving'} onClick={() => void forgetAiCredential()}>删除密钥</button>
+                      </div>}
+                    </div>
+                  </>}
                   <div className="ai-connection-row">
                     <span className={`ai-connection-status ${aiConnectionStatus}`}><PlugZap size={14} />{aiConnectionMessage}</span>
                     <button

@@ -1,9 +1,20 @@
-export type AiProviderId = 'openai-compatible'
+import { BUILTIN_SERVICE_MODEL, BUILTIN_SERVICES, type BuiltinServiceRegion } from './builtinService'
+
+export type AiProviderId = 'openai-compatible' | 'builtin-agnes'
+
+export type BuiltinAgnesRegion = BuiltinServiceRegion
+
+export const BUILTIN_AGNES_MODEL = BUILTIN_SERVICE_MODEL
+export const BUILTIN_AGNES_ENDPOINTS: Record<BuiltinAgnesRegion, string> = {
+  international: BUILTIN_SERVICES.international.baseUrl,
+  china: BUILTIN_SERVICES.china.baseUrl,
+}
 
 export const LEGACY_AGNES_PROVIDER_ID = 'agnes'
 
 export type AiSettings = {
   providerId: AiProviderId
+  builtinRegion: BuiltinAgnesRegion
   baseUrl: string
   model: string
   successfulBaseUrls: string[]
@@ -20,6 +31,7 @@ const SETTINGS_KEY = 'zili-writing-ai-settings-v1'
 
 export const OPENAI_COMPATIBLE_DEFAULTS: AiSettings = {
   providerId: 'openai-compatible',
+  builtinRegion: 'international',
   baseUrl: '',
   model: '',
   successfulBaseUrls: [],
@@ -35,10 +47,13 @@ let runtimeApiKey = ''
 export function normalizeAiSettings(stored: StoredAiSettings): AiSettings {
   const value = stored && typeof stored === 'object' ? stored : {}
   const defaults = OPENAI_COMPATIBLE_DEFAULTS
+  const providerId = value.providerId === 'builtin-agnes' ? 'builtin-agnes' : 'openai-compatible'
+  const builtinRegion: BuiltinAgnesRegion = value.builtinRegion === 'china' ? 'china' : 'international'
   const timeoutSeconds = Math.max(10, Math.min(300, Number(value.timeoutSeconds) || defaults.timeoutSeconds))
-  const baseUrl = typeof value.baseUrl === 'string' ? value.baseUrl : defaults.baseUrl
+  const storedBaseUrl = typeof value.baseUrl === 'string' ? value.baseUrl : defaults.baseUrl
+  const baseUrl = providerId === 'builtin-agnes' ? BUILTIN_AGNES_ENDPOINTS[builtinRegion] : storedBaseUrl
   const storedModel = typeof value.model === 'string' ? value.model : defaults.model
-  const model = deprecatedAgnesModelReplacement(baseUrl, storedModel)
+  const model = providerId === 'builtin-agnes' ? BUILTIN_AGNES_MODEL : deprecatedAgnesModelReplacement(baseUrl, storedModel)
   const successfulBaseUrls = Array.isArray(value.successfulBaseUrls)
     ? [...new Map(value.successfulBaseUrls
       .filter((item): item is string => typeof item === 'string')
@@ -57,7 +72,8 @@ export function normalizeAiSettings(stored: StoredAiSettings): AiSettings {
     successfulModels[activeEndpointKey] = model
   }
   return {
-    providerId: 'openai-compatible',
+    providerId,
+    builtinRegion,
     baseUrl,
     model,
     successfulBaseUrls,
@@ -114,5 +130,9 @@ export function getRuntimeApiKey() {
 }
 
 export function providerLabel(_providerId?: AiProviderId) {
-  return 'OpenAI 兼容接口'
+  return _providerId === 'builtin-agnes' ? '内置服务' : 'OpenAI 兼容接口'
+}
+
+export function isBuiltinAgnesProvider(settings: Pick<AiSettings, 'providerId'> | AiProviderId) {
+  return typeof settings === 'string' ? settings === 'builtin-agnes' : settings.providerId === 'builtin-agnes'
 }

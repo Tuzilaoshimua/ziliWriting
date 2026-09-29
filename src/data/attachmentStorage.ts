@@ -55,12 +55,25 @@ export async function saveAttachment(projectId: string, file: File, scope: Attac
     extension,
     bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
   })
-  const database = await getDatabase()
-  await database.execute(
-    `INSERT INTO attachments (id, project_id, file_name, extension, media_type, size, local_path, scope_type, scope_id, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [attachment.id, projectId, file.name, extension, attachment.mediaType, file.size, attachment.localPath, attachment.scopeType, attachment.scopeId, attachment.createdAt],
-  )
+  try {
+    const database = await getDatabase()
+    await database.execute(
+      `INSERT INTO attachments (id, project_id, file_name, extension, media_type, size, local_path, scope_type, scope_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [attachment.id, projectId, file.name, extension, attachment.mediaType, file.size, attachment.localPath, attachment.scopeType, attachment.scopeId, attachment.createdAt],
+    )
+  } catch (databaseError) {
+    try {
+      await invoke('delete_attachment', {
+        projectId,
+        attachmentId: attachment.id,
+        extension,
+      })
+    } catch {
+      // 保留原始数据库错误，避免清理失败掩盖根因。
+    }
+    throw databaseError
+  }
   return attachment
 }
 
@@ -147,11 +160,26 @@ export async function deleteAttachment(attachment: Attachment): Promise<void> {
     await webDeleteWithBlob('attachments', attachment.id)
     return
   }
-  await invoke('delete_attachment', {
-    projectId: attachment.projectId,
-    attachmentId: attachment.id,
-    extension: attachment.extension,
-  })
   const database = await getDatabase()
-  await database.execute('DELETE FROM attachments WHERE id = $1', [attachment.id])
+  const deleteResult = await database.execute('DELETE FROM attachments WHERE id = $1', [attachment.id])
+  try {
+    await invoke('delete_attachment', {
+      projectId: attachment.projectId,
+      attachmentId: attachment.id,
+      extension: attachment.extension,
+    })
+  } catch (fileError) {
+    if (deleteResult?.rowsAffected) {
+      try {
+        await database.execute(
+          `INSERT INTO attachments (id, project_id, file_name, extension, media_type, size, local_path, scope_type, scope_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [attachment.id, attachment.projectId, attachment.fileName, attachment.extension, attachment.mediaType, attachment.size, attachment.localPath, attachment.scopeType, attachment.scopeId, attachment.createdAt],
+        )
+      } catch {
+        // 保留原始文件删除错误，避免补偿失败掩盖根因。
+      }
+    }
+    throw fileError
+  }
 }

@@ -96,6 +96,7 @@ export type ParsedProjectBackup = {
 
 const DATABASE_URL = 'sqlite:zili.db'
 let databasePromise: Promise<Database> | null = null
+let sqliteSaveTail: Promise<void> = Promise.resolve()
 
 export function hashDocument(document: DocumentNode): string {
   const source = JSON.stringify(document)
@@ -225,7 +226,27 @@ export function createInitialProject(title = '未命名作品'): ProjectState {
   }
 }
 
+export function createEmptyProject(): ProjectState {
+  return {
+    id: '',
+    title: '',
+    volumes: [],
+    chapters: [],
+    scenes: [],
+    activeChapterId: '',
+    activeSceneId: '',
+    deletedAt: null,
+  }
+}
+
 function normalizeProject(value: Partial<ProjectState>): ProjectState {
+  if (value.id === '') {
+    return {
+      ...createEmptyProject(),
+      title: value.title || '',
+      deletedAt: value.deletedAt ?? null,
+    }
+  }
   const fallback = createInitialProject()
   const sourceChapters = Array.isArray(value.chapters) && value.chapters.length > 0
     ? value.chapters
@@ -315,7 +336,7 @@ async function loadWebWorkspace(): Promise<ProjectState[]> {
     volumes: volumeRows.filter((volume) => volume.projectId === project.id),
     chapters: chapterRows.filter((chapter) => chapter.projectId === project.id),
     scenes: sceneRows.filter((scene) => scene.projectId === project.id),
-  }))
+  })).filter((project) => Boolean(project.id))
 }
 
 async function saveWebProject(project: ProjectState): Promise<void> {
@@ -334,7 +355,7 @@ async function getDatabase() {
 
 export async function listProjects(): Promise<ProjectSummary[]> {
   if (!isTauri()) {
-    return (await loadWebWorkspace()).filter((project) => !project.deletedAt).map((project) => ({
+    return (await loadWebWorkspace()).filter((project) => project.id && !project.deletedAt).map((project) => ({
       id: project.id,
       title: project.title,
       updatedAt: Math.max(...project.chapters.map((chapter) => chapter.updatedAt)),
@@ -352,7 +373,7 @@ export async function listProjects(): Promise<ProjectSummary[]> {
     SELECT p.id, p.title, p.updated_at, COUNT(c.id) AS chapter_count
     FROM projects p
     LEFT JOIN chapters c ON c.project_id = p.id
-    WHERE p.deleted_at IS NULL
+    WHERE p.deleted_at IS NULL AND p.id <> ''
     GROUP BY p.id, p.title, p.updated_at
     ORDER BY p.updated_at DESC
   `)
@@ -366,13 +387,13 @@ export async function listProjects(): Promise<ProjectSummary[]> {
 
 export async function loadProject(projectId?: string): Promise<ProjectState> {
   if (!isTauri()) {
-    const projects = (await loadWebWorkspace()).filter((project) => !project.deletedAt)
-    return projects.find((project) => project.id === projectId) ?? projects[0] ?? createInitialProject()
+    const projects = (await loadWebWorkspace()).filter((project) => project.id && !project.deletedAt)
+    return projects.find((project) => project.id === projectId) ?? projects[0] ?? createEmptyProject()
   }
 
   const database = await getDatabase()
   const parameters = projectId ? [projectId] : []
-  const where = projectId ? 'WHERE id = $1' : ''
+  const where = projectId ? 'WHERE id = $1' : "WHERE id <> ''"
   const projects = await database.select<Array<{
     id: string
     title: string
@@ -382,9 +403,7 @@ export async function loadProject(projectId?: string): Promise<ProjectState> {
   }>>(`SELECT id, title, active_chapter_id, active_scene_id, deleted_at FROM projects ${where}${where ? ' AND' : ' WHERE'} deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1`, parameters)
 
   if (projects.length === 0) {
-    const initial = createInitialProject()
-    await saveProject(initial)
-    return initial
+    return createEmptyProject()
   }
 
   const stored = projects[0]
@@ -464,12 +483,20 @@ export async function loadProject(projectId?: string): Promise<ProjectState> {
 }
 
 export async function saveProject(project: ProjectState): Promise<void> {
+  if (!project.id) return
   if (!isTauri()) {
     await saveWebProject(project)
     return
   }
 
   const database = await getDatabase()
+  const waitForPreviousSave = sqliteSaveTail
+  let releaseSave!: () => void
+  sqliteSaveTail = new Promise<void>((resolve) => {
+    releaseSave = resolve
+  })
+  await waitForPreviousSave
+  try {
   const now = Date.now()
   await database.execute(
     `INSERT INTO projects (id, title, active_chapter_id, active_scene_id, updated_at, deleted_at)
@@ -573,20 +600,25 @@ export async function saveProject(project: ProjectState): Promise<void> {
   if (storedChapters.length !== chapterIds.length || chapterIds.some((id) => !storedChapterById.has(id))) {
     await deleteMissing(database, 'chapters', 'project_id', project.id, chapterIds)
   }
+  } finally {
+    releaseSave()
+  }
 }
 
 async function deleteMissing(database: Database, table: string, ownerColumn: string, ownerId: string, ids: string[]) {
-  if (ids.length === 0) return
   const placeholders = ids.map((_, index) => `$${index + 2}`).join(', ')
+  const where = ids.length > 0
+    ? `${ownerColumn} = $1 AND id NOT IN (${placeholders})`
+    : `${ownerColumn} = $1`
   await database.execute(
-    `DELETE FROM ${table} WHERE ${ownerColumn} = $1 AND id NOT IN (${placeholders})`,
-    [ownerId, ...ids],
+    `DELETE FROM ${table} WHERE ${where}`,
+    ids.length > 0 ? [ownerId, ...ids] : [ownerId],
   )
 }
 
 export async function listTrashedProjects(): Promise<TrashedProjectSummary[]> {
   if (!isTauri()) {
-    return (await loadWebWorkspace()).filter((project) => Boolean(project.deletedAt)).map((project) => ({
+    return (await loadWebWorkspace()).filter((project) => project.id && Boolean(project.deletedAt)).map((project) => ({
       id: project.id,
       title: project.title,
       updatedAt: Math.max(...project.chapters.map((chapter) => chapter.updatedAt)),
@@ -605,7 +637,7 @@ export async function listTrashedProjects(): Promise<TrashedProjectSummary[]> {
     SELECT p.id, p.title, p.updated_at, COUNT(c.id) AS chapter_count, p.deleted_at
     FROM projects p
     LEFT JOIN chapters c ON c.project_id = p.id
-    WHERE p.deleted_at IS NOT NULL
+    WHERE p.deleted_at IS NOT NULL AND p.id <> ''
     GROUP BY p.id, p.title, p.updated_at, p.deleted_at
     ORDER BY p.deleted_at DESC
   `)
@@ -651,11 +683,21 @@ export async function deleteProject(projectId: string): Promise<void> {
     return
   }
   const database = await getDatabase()
-  await database.execute('DELETE FROM revisions WHERE chapter_id IN (SELECT id FROM chapters WHERE project_id = $1)', [projectId])
-  await database.execute('DELETE FROM scenes WHERE project_id = $1', [projectId])
-  await database.execute('DELETE FROM chapters WHERE project_id = $1', [projectId])
-  await database.execute('DELETE FROM volumes WHERE project_id = $1', [projectId])
-  await database.execute('DELETE FROM projects WHERE id = $1', [projectId])
+  const waitForPreviousSave = sqliteSaveTail
+  let releaseSave!: () => void
+  sqliteSaveTail = new Promise<void>((resolve) => {
+    releaseSave = resolve
+  })
+  await waitForPreviousSave
+  try {
+    await database.execute('DELETE FROM revisions WHERE chapter_id IN (SELECT id FROM chapters WHERE project_id = $1)', [projectId])
+    await database.execute('DELETE FROM scenes WHERE project_id = $1', [projectId])
+    await database.execute('DELETE FROM chapters WHERE project_id = $1', [projectId])
+    await database.execute('DELETE FROM volumes WHERE project_id = $1', [projectId])
+    await database.execute('DELETE FROM projects WHERE id = $1', [projectId])
+  } finally {
+    releaseSave()
+  }
 }
 
 export async function listRevisions(chapterId: string): Promise<Revision[]> {
@@ -720,6 +762,7 @@ export async function listRevisions(chapterId: string): Promise<Revision[]> {
 }
 
 export async function createRevision(chapter: Chapter, reason: string): Promise<Revision | null> {
+  if (!chapter.id) return null
   const existing = await listRevisions(chapter.id)
   if (existing[0]?.content === chapter.content && existing[0]?.title === chapter.title) return null
 
@@ -767,6 +810,9 @@ export function parseProjectBackupWithIdMap(source: string): ParsedProjectBackup
     throw new Error('无法识别的字里写作备份文件')
   }
   const imported = normalizeProject(data.project)
+  if (!imported.id || imported.chapters.length === 0 || imported.volumes.length === 0) {
+    throw new Error('备份中没有可导入的作品')
+  }
   const volumeIds = new Map(imported.volumes.map((volume) => [volume.id, crypto.randomUUID()]))
   const chapterIds = new Map(imported.chapters.map((chapter) => [chapter.id, crypto.randomUUID()]))
   const sceneIds = new Map(imported.scenes.map((scene) => [scene.id, crypto.randomUUID()]))

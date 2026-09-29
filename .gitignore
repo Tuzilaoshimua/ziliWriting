@@ -11,4 +11,6 @@ dist
 src-tauri/icons/icon-source.*
 .env
 .env.*
+API.txt
 upload_*
+.agnes/

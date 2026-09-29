@@ -68,12 +68,25 @@ export async function saveImageAsset(projectId: string, file: File): Promise<Ima
     extension,
     bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
   })
-  const database = await getDatabase()
-  await database.execute(
-    `INSERT INTO assets (id, project_id, file_name, extension, media_type, size, local_path, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [id, projectId, file.name, extension, file.type, file.size, localPath, createdAt],
-  )
+  try {
+    const database = await getDatabase()
+    await database.execute(
+      `INSERT INTO assets (id, project_id, file_name, extension, media_type, size, local_path, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [id, projectId, file.name, extension, file.type, file.size, localPath, createdAt],
+    )
+  } catch (databaseError) {
+    try {
+      await invoke('delete_image_asset', {
+        projectId,
+        assetId: id,
+        extension,
+      })
+    } catch {
+      // 保留原始数据库错误，避免清理失败掩盖根因。
+    }
+    throw databaseError
+  }
   return {
     id, projectId, fileName: file.name, extension, mediaType: file.type,
     size: file.size, localPath, src: convertFileSrc(localPath), createdAt,
@@ -118,13 +131,28 @@ export async function deleteImageAsset(asset: ImageAsset): Promise<void> {
     webAssetUrls.delete(asset.id)
     return
   }
-  await invoke('delete_image_asset', {
-    projectId: asset.projectId,
-    assetId: asset.id,
-    extension: asset.extension,
-  })
   const database = await getDatabase()
-  await database.execute('DELETE FROM assets WHERE id = $1', [asset.id])
+  const deleteResult = await database.execute('DELETE FROM assets WHERE id = $1', [asset.id])
+  try {
+    await invoke('delete_image_asset', {
+      projectId: asset.projectId,
+      assetId: asset.id,
+      extension: asset.extension,
+    })
+  } catch (fileError) {
+    if (deleteResult?.rowsAffected) {
+      try {
+        await database.execute(
+          `INSERT INTO assets (id, project_id, file_name, extension, media_type, size, local_path, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [asset.id, asset.projectId, asset.fileName, asset.extension, asset.mediaType, asset.size, asset.localPath, asset.createdAt],
+        )
+      } catch {
+        // 保留原始文件删除错误，避免补偿失败掩盖根因。
+      }
+    }
+    throw fileError
+  }
 }
 
 export async function readImageAsset(asset: ImageAsset): Promise<Uint8Array> {

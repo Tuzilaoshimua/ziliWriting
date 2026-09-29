@@ -55,13 +55,26 @@ export async function saveReferenceText(projectId: string, file: File, rightsCon
     extension,
     bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
   })
-  const database = await getDatabase()
-  await database.execute(
-    `INSERT INTO reference_texts
-      (id, project_id, file_name, extension, media_type, size, local_path, rights_confirmed_at, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [reference.id, projectId, reference.fileName, extension, reference.mediaType, reference.size, reference.localPath, rightsConfirmedAt, reference.createdAt],
-  )
+  try {
+    const database = await getDatabase()
+    await database.execute(
+      `INSERT INTO reference_texts
+        (id, project_id, file_name, extension, media_type, size, local_path, rights_confirmed_at, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [reference.id, projectId, reference.fileName, extension, reference.mediaType, reference.size, reference.localPath, rightsConfirmedAt, reference.createdAt],
+    )
+  } catch (databaseError) {
+    try {
+      await invoke('delete_reference_text', {
+        projectId,
+        referenceId: reference.id,
+        extension,
+      })
+    } catch {
+      // 保留原始数据库错误，避免清理失败掩盖根因。
+    }
+    throw databaseError
+  }
   return reference
 }
 
@@ -117,11 +130,27 @@ export async function deleteReferenceText(reference: ReferenceText): Promise<voi
     await webDeleteWithBlob('references', reference.id)
     return
   }
-  await invoke('delete_reference_text', {
-    projectId: reference.projectId,
-    referenceId: reference.id,
-    extension: reference.extension,
-  })
   const database = await getDatabase()
-  await database.execute('DELETE FROM reference_texts WHERE id = $1', [reference.id])
+  const deleteResult = await database.execute('DELETE FROM reference_texts WHERE id = $1', [reference.id])
+  try {
+    await invoke('delete_reference_text', {
+      projectId: reference.projectId,
+      referenceId: reference.id,
+      extension: reference.extension,
+    })
+  } catch (fileError) {
+    if (deleteResult?.rowsAffected) {
+      try {
+        await database.execute(
+          `INSERT INTO reference_texts
+            (id, project_id, file_name, extension, media_type, size, local_path, rights_confirmed_at, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [reference.id, reference.projectId, reference.fileName, reference.extension, reference.mediaType, reference.size, reference.localPath, reference.rightsConfirmedAt, reference.createdAt],
+        )
+      } catch {
+        // 保留原始文件删除错误，避免补偿失败掩盖根因。
+      }
+    }
+    throw fileError
+  }
 }
