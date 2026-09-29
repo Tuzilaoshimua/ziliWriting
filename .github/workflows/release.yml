@@ -156,25 +156,48 @@ jobs:
 
           echo "Gitee Release ID: $release_id"
 
+          # The Windows runner's curl cannot reliably open file paths containing
+          # non-ASCII (Chinese) characters (curl error 26). Stage every artifact
+          # under an ASCII-only name before uploading.
+          safe_setup="zili-writing_${version}_x64-setup.exe"
+          safe_setup_sig="${safe_setup}.sig"
+          cp -f "$setup_exe" "$safe_setup"
+          cp -f "$setup_sig" "$safe_setup_sig"
+
+          gitee_delete_asset_by_name() {
+            local target_name="$1"
+            local release_json
+            release_json=$(curl --silent --show-error \
+              "$gitee_api/releases/$release_id?access_token=$GITEE_TOKEN")
+            local matched_ids
+            matched_ids=$(printf '%s' "$release_json" | TARGET_NAME="$target_name" node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { try { const value = JSON.parse(input); const matched = (value.assets || []).filter(a => a.name === process.env.TARGET_NAME).map(a => a.id); process.stdout.write(matched.join(" ")); } catch {} });')
+            local existing_asset_id
+            for existing_asset_id in $matched_ids; do
+              echo "Removing existing Gitee asset '$target_name' (id $existing_asset_id)..." >&2
+              curl --silent --show-error -X DELETE \
+                "$gitee_api/releases/$release_id/attach_files/$existing_asset_id?access_token=$GITEE_TOKEN" > /dev/null || true
+            done
+          }
+
           upload_asset() {
             local file_path="$1"
-            local file_name
-            file_name=$(basename "$file_path")
-            echo "Uploading $file_name to Gitee..." >&2
+            local upload_name="$2"
+            echo "Uploading $upload_name to Gitee..." >&2
+            gitee_delete_asset_by_name "$upload_name"
             curl --fail-with-body --silent --show-error -X POST \
               "$gitee_api/releases/$release_id/attach_files?access_token=$GITEE_TOKEN" \
               -F "file=@$file_path" \
-              -F "name=$file_name"
+              -F "name=$upload_name"
           }
 
-          setup_response=$(upload_asset "$setup_exe")
+          setup_response=$(upload_asset "$safe_setup" "$safe_setup")
           setup_download_url=$(printf '%s' "$setup_response" | json_download_url)
           if [ -z "$setup_download_url" ]; then
             echo "::error::Gitee did not return a public installer download URL."
             echo "Gitee response: $setup_response"
             exit 1
           fi
-          upload_asset "$setup_sig" > /dev/null
+          upload_asset "$safe_setup_sig" "$safe_setup_sig" > /dev/null
 
           UPDATE_URL="$setup_download_url" node - "$latest_json" <<'NODE'
           const fs = require('fs')
@@ -186,7 +209,7 @@ jobs:
           fs.writeFileSync(path, `${JSON.stringify(metadata, null, 2)}\n`)
           NODE
 
-          upload_asset "$latest_json" > /dev/null
+          upload_asset "$latest_json" "$latest_json" > /dev/null
 
           existing_response=$(curl --silent --show-error \
             "$gitee_api/contents/latest.json?ref=master&access_token=$GITEE_TOKEN")
