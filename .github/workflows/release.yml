@@ -76,11 +76,20 @@ jobs:
             fi
           done
 
-          # Download latest.json from GitHub Release (tauri-action uploads it there)
+          # Download latest.json from GitHub Release using API (tauri-action uploads it as release asset)
           echo "Downloading latest.json from GitHub Release..."
           latest_json="latest.json"
-          curl -fSL --fail-with-body -o "$latest_json" \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/latest.json"
+          asset_id=$(curl -sSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            | node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", c => input += c); process.stdin.on("end", () => { const r = JSON.parse(input); const a = (r.assets || []).find(x => x.name === "latest.json"); process.stdout.write(String(a ? a.id : "")); });')
+          if [ -z "$asset_id" ]; then
+            echo "::error::latest.json asset not found in GitHub Release."
+            exit 1
+          fi
+          curl -sSL -o "$latest_json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/$asset_id"
 
           if [ ! -f "$latest_json" ] || [ ! -s "$latest_json" ]; then
             echo "::error::Failed to download latest.json from GitHub Release."
