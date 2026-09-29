@@ -1,15 +1,15 @@
 {
-  "version": "0.3.2",
+  "version": "0.4.0",
   "notes": "请下载下方 assets 中的安装包进行安装。",
-  "pub_date": "2026-07-26T21:35:58.581Z",
+  "pub_date": "2026-09-29T15:02:44.045Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTA2L21BS3l6RHNRNW1aOU45WEgzeUV1OFJMdVh1NDJTNE9FdjllbFlRMFM4eWwwOERxQzRJSFFINTlrQzN4Z0pSZHQ1OWNKOWlDcWtMOUdWOEpOQmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1MTAxNzU2CWZpbGU65a2X6YeM5YaZ5L2cXzAuMy4yX3g2NC1zZXR1cC5leGUKUExuUzdqV1lsWmhJaEwyZDM4RldVeEJuekQrSFRKL2FGS2VubXFURzBHaHNnRW5wWGVCY01zMm9Id01pQTcrRko5QmVzNkU4K0h5SlIrL2pEamVNRGc9PQo=",
-      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.3.2/_0.3.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTlFK1B3SkRKejBGYUNJdjUvaEVBeTlIK0JzZnhJdVRsd3lSWHBXd1NJK3FkSVhjb1EzQUFOeWY5cjlpSWFBZU0zWG1MUnMyWGxTTXJPNkhmL0pVUEFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjk0MTYwCWZpbGU65a2X6YeM5YaZ5L2cXzAuNC4wX3g2NC1zZXR1cC5leGUKMm80ZXZYcHZJcldqZjJ1c1dWUnBZK1d6TGNLYllCZ1hzVkFvSkQ0T0J4TENVNHRLbWVQTHNzcmdlSit4UnNXWDBSc1dhZnNkdU05a3U3K2NWYWU2QUE9PQo=",
+      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.4.0/zili-writing_0.4.0_x64-setup.exe"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTA2L21BS3l6RHNRNW1aOU45WEgzeUV1OFJMdVh1NDJTNE9FdjllbFlRMFM4eWwwOERxQzRJSFFINTlrQzN4Z0pSZHQ1OWNKOWlDcWtMOUdWOEpOQmdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1MTAxNzU2CWZpbGU65a2X6YeM5YaZ5L2cXzAuMy4yX3g2NC1zZXR1cC5leGUKUExuUzdqV1lsWmhJaEwyZDM4RldVeEJuekQrSFRKL2FGS2VubXFURzBHaHNnRW5wWGVCY01zMm9Id01pQTcrRko5QmVzNkU4K0h5SlIrL2pEamVNRGc9PQo=",
-      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.3.2/_0.3.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdkd5N3ZhZ1lnVTlFK1B3SkRKejBGYUNJdjUvaEVBeTlIK0JzZnhJdVRsd3lSWHBXd1NJK3FkSVhjb1EzQUFOeWY5cjlpSWFBZU0zWG1MUnMyWGxTTXJPNkhmL0pVUEFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjk0MTYwCWZpbGU65a2X6YeM5YaZ5L2cXzAuNC4wX3g2NC1zZXR1cC5leGUKMm80ZXZYcHZJcldqZjJ1c1dWUnBZK1d6TGNLYllCZ1hzVkFvSkQ0T0J4TENVNHRLbWVQTHNzcmdlSit4UnNXWDBSc1dhZnNkdU05a3U3K2NWYWU2QUE9PQo=",
+      "url": "https://gitee.com/PrincessBride/crafting-words/releases/download/v0.4.0/zili-writing_0.4.0_x64-setup.exe"
     }
   }
 }
