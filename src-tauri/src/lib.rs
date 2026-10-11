@@ -10,6 +10,37 @@ const AI_SETTINGS_ACCOUNT: &str = "settings-v1";
 const MAX_WEB_RESEARCH_BODY_BYTES: usize = 2 * 1024 * 1024;
 const WEB_RESEARCH_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const WEB_RESEARCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+const QQ_CONTACT_URL: &str = "https://wpa.qq.com/msgrd?v=3&uin=13393167&site=qq&menu=yes";
+
+#[tauri::command]
+fn open_qq_contact() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", &format!("start \"\" \"{QQ_CONTACT_URL}\"")])
+            .spawn()
+            .map_err(|error| format!("无法打开 QQ 联系页面：{error}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(QQ_CONTACT_URL)
+            .spawn()
+            .map_err(|error| format!("无法打开 QQ 联系页面：{error}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(QQ_CONTACT_URL)
+            .spawn()
+            .map_err(|error| format!("无法打开 QQ 联系页面：{error}"))?;
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    Err("当前系统不支持打开 QQ 联系页面".into())
+}
 
 fn is_blocked_ipv4(address: Ipv4Addr) -> bool {
     let [first, second, third, fourth] = address.octets();
@@ -1157,6 +1188,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            open_qq_contact,
             save_image_asset,
             delete_image_asset,
             read_image_asset,

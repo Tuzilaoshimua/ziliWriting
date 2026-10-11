@@ -548,7 +548,7 @@ function chapterContainsCitation(chapter: Chapter, citation: ProjectAnswerCitati
 }
 
 type UtilityPanelKind = 'assistant' | 'history' | 'trash' | 'assets' | 'attachments' | 'references' | 'naming'
-type ClosingModalKind = 'library' | 'settings' | 'newProject'
+type ClosingModalKind = 'library' | 'settings' | 'newProject' | 'reward'
 type SettingsCategory = 'appearance' | 'focus' | 'ai' | 'application'
 
 const chapterWordCountCache = new WeakMap<Chapter, number>()
@@ -815,6 +815,7 @@ function App() {
   const [projectNameTargetId, setProjectNameTargetId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('appearance')
+  const [rewardOpen, setRewardOpen] = useState(false)
   const [closingModal, setClosingModal] = useState<ClosingModalKind | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [exportBusy, setExportBusy] = useState<'md' | 'docx' | 'epub' | null>(null)
@@ -2220,7 +2221,8 @@ function App() {
       return
     }
     const wantsWebResearch = requestsWebResearch(request)
-    if (!aiDataPermissions.currentChapter && !aiDataPermissions.otherChapters) {
+    const hasEmptyChapterContext = !activeChapter.id || !activeChapter.plainText.trim()
+    if (!aiDataPermissions.currentChapter && !aiDataPermissions.otherChapters && !hasEmptyChapterContext) {
       const mayUseExternalSources = (aiDataPermissions.deletedChapters && /回收站|已删除|删掉的|删除的.{0,8}(?:章节|内容|正文)|之前删/.test(request))
         || (aiDataPermissions.referenceTexts && /参考文本|参考资料|参考小说|导入的(?:小说|文本|资料)|素材库/.test(request))
         || (aiDataPermissions.webResearch && wantsWebResearch)
@@ -2534,9 +2536,9 @@ function App() {
       setAgentMessages((current) => current.map((message) => message.id === completed.id ? completed : message))
       setAgentInput('')
       setAgentImages([])
-      setAgentMessage(turn.drafts.length ? `已生成 ${turn.drafts.length} 个待确认候选` : turn.citations.length ? `引用了 ${turn.citations.length} 处原文` : '')
+      setAgentMessage(turn.drafts.length ? `已生成 ${turn.drafts.length} 个待确认候选，请预览后确认是否插入正文` : turn.citations.length ? `引用了 ${turn.citations.length} 处原文` : '')
       setAgentTaskPhase('complete')
-      finishAiTask(taskId, 'completed', turn.drafts.length ? `生成 ${turn.drafts.length} 个待确认候选` : turn.citations.length ? `完成回复并引用 ${turn.citations.length} 处原文` : '回复已完成')
+      finishAiTask(taskId, 'completed', turn.drafts.length ? `生成 ${turn.drafts.length} 个待确认候选，等待确认插入正文` : turn.citations.length ? `完成回复并引用 ${turn.citations.length} 处原文` : '回复已完成')
     } catch (error) {
       if (agentController.current !== controller) return
       const errorMessage = error instanceof Error ? error.message : 'Agent 请求失败'
@@ -2870,8 +2872,8 @@ function App() {
       for (const candidate of candidates) await saveDraftCandidate(candidate)
       setDraftCandidates((current) => [...candidates, ...current])
       setPreviewDraftId(candidates[0]?.id ?? null)
-      setDraftMessage(candidates.length > 0 ? `已生成 ${candidates.length} 个候选方案，请先查看校验` : 'AI 没有返回有效候选文本')
-      finishAiTask(taskId, candidates.length > 0 ? 'completed' : 'failed', candidates.length > 0 ? `已生成 ${candidates.length} 个待确认候选` : 'AI 没有返回有效候选文本')
+      setDraftMessage(candidates.length > 0 ? `已生成 ${candidates.length} 个候选方案，请预览后确认是否插入正文` : 'AI 没有返回有效候选文本')
+      finishAiTask(taskId, candidates.length > 0 ? 'completed' : 'failed', candidates.length > 0 ? `已生成 ${candidates.length} 个待确认候选，等待确认插入正文` : 'AI 没有返回有效候选文本')
     } catch (error) {
       if (draftController.current !== controller) return
       const detail = error instanceof Error ? error.message : '生成候选文本失败'
@@ -3391,6 +3393,7 @@ function App() {
       setPreferences((current) => ({ ...current, motionEnabled: pendingMotionEnabled }))
     }
     if (kind === 'newProject') setNewProjectDialogOpen(false)
+    if (kind === 'reward') setRewardOpen(false)
     setClosingModal((current) => current === kind ? null : current)
   }
 
@@ -3674,9 +3677,11 @@ function App() {
       })
     }
 
+    const hasChapterText = activeChapter.plainText.trim().length > 0
     const canPreview = activeDraftPreview
       && activeDraftPreview.status === 'candidate'
       && activeDraftPreview.chapterId === activeChapter.id
+      && hasChapterText
       && activeDraftPreviewTask.targetAction !== 'new_chapter'
     const marker: DraftPreviewMarker | null = canPreview ? {
       id: activeDraftPreview.id,
@@ -4301,6 +4306,7 @@ function App() {
         if (appDialog) void resolveAppDialog(false)
         else if (newProjectDialogOpen) void closeModal('newProject')
         else if (settingsOpen) void closeModal('settings')
+        else if (rewardOpen) void closeModal('reward')
         else if (libraryOpen) void closeModal('library')
         else if (contextMenu) setContextMenu(null)
         else if (sidebarToolsOpen) setSidebarToolsOpen(false)
@@ -4346,7 +4352,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [appDialog, assetsOpen, assistantOpen, attachmentsOpen, contextMenu, findOpen, focusMode, fullscreen, historyOpen, libraryOpen, newProjectDialogOpen, referencesOpen, settingsOpen, sidebarToolsOpen, trashOpen])
+  }, [appDialog, assetsOpen, assistantOpen, attachmentsOpen, contextMenu, findOpen, focusMode, fullscreen, historyOpen, libraryOpen, newProjectDialogOpen, referencesOpen, rewardOpen, settingsOpen, sidebarToolsOpen, trashOpen])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -6075,6 +6081,9 @@ function App() {
             <button className="icon-button" title="写作设置" aria-label="写作设置" onClick={() => { setPendingMotionEnabled(preferences.motionEnabled); setClosingModal(null); setSettingsOpen(true) }}>
               <Settings2 size={18} />
             </button>
+            <button className="reward-button" title="支持作者" aria-label="支持作者" onClick={() => { setClosingModal(null); setRewardOpen(true) }}>
+              赏
+            </button>
             <span className="window-controls-divider" />
             <button className="window-control" title="最小化" aria-label="最小化" onClick={() => void runWindowCommand('minimize')}>
               <Minus size={16} strokeWidth={1.7} />
@@ -6303,15 +6312,25 @@ function App() {
           )}
 
           <div
-            className="paper"
+            className={`paper ${activeDraftPreview?.status === 'candidate' ? 'has-draft-preview' : ''} ${activeDraftPreview?.status === 'candidate' && activeDraftPreview.chapterId === activeChapter.id && !activeChapter.plainText.trim() ? 'has-empty-draft-preview' : ''}`}
             ref={paperRef}
             onScroll={(event) => {
               queueEditorViewSave(activeChapterIdRef.current, { scrollTop: event.currentTarget.scrollTop })
               updatePaperScrollState(event.currentTarget)
             }}
           >
+            {activeDraftPreview?.status === 'candidate' && activeDraftPreview.chapterId === activeChapter.id && !activeChapter.plainText.trim() && (
+              <section className="agent-empty-draft-preview" data-draft-preview-id={activeDraftPreview.id}>
+                <header>
+                  <strong>{activeDraftPreview.title || '正文预览'}</strong>
+                  <span>{activeDraftPreviewTask.targetAction === 'new_chapter' ? `${activeDraftPreviewTask.targetChapterTitle || '新章节'} · 待确认写入` : `${draftModeLabel(activeDraftPreview)} · 待确认写入`}</span>
+                  <small>写作目标：{activeDraftPreview.validation.goalCoverage || activeDraftPreviewTask.request || '按本次对话要求生成候选'}</small>
+                </header>
+                <div>{activeDraftPreview.text}</div>
+              </section>
+            )}
             <EditorContent editor={editor} />
-            {activeDraftPreview?.status === 'candidate' && activeDraftPreviewTask.targetAction === 'new_chapter' && (
+            {activeDraftPreview?.status === 'candidate' && activeDraftPreviewTask.targetAction === 'new_chapter' && activeChapter.plainText.trim() && (
               <section className="agent-new-chapter-preview" data-draft-preview-id={activeDraftPreview.id}>
                 <header>
                   <strong>{activeDraftPreviewTask.targetChapterTitle || '新章节'}</strong>
@@ -7622,6 +7641,25 @@ function App() {
               <button onClick={() => void exportDocument('md')} disabled={Boolean(exportBusy) || !exportReport || exportReport.missingResources > 0}><strong>Markdown</strong><span>{exportBusy === 'md' ? '正在生成…' : '自包含图片'}</span></button>
               <button onClick={() => void exportDocument('docx')} disabled={Boolean(exportBusy) || !exportReport || exportReport.missingResources > 0}><strong>DOCX</strong><span>{exportBusy === 'docx' ? '正在生成…' : 'Word 文档'}</span></button>
               <button onClick={() => void exportDocument('epub')} disabled={Boolean(exportBusy) || !exportReport || exportReport.missingResources > 0}><strong>EPUB</strong><span>{exportBusy === 'epub' ? '正在生成…' : '电子书'}</span></button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {rewardOpen && (
+        <div className={`modal-backdrop ${closingModal === 'reward' ? 'is-closing' : ''}`} onMouseDown={(event) => {
+          if (event.target === event.currentTarget) void closeModal('reward')
+        }}>
+          <section className="reward-modal" role="dialog" aria-modal="true" aria-label="支持作者">
+            <header>
+              <div><strong>谢谢你的支持</strong></div>
+              <button className="icon-button" onClick={() => void closeModal('reward')} title="关闭支持页面" aria-label="关闭支持页面"><X size={18} /></button>
+            </header>
+            <div className="reward-content">
+              <p className="reward-lead">如果“字里写作”对你有所帮助，欢迎扫码请作者喝一杯奶茶。</p>
+              <img className="reward-qr" src="/reward-qr.png" alt="微信打赏二维码" />
+              <p className="reward-note">有钱捧个钱场，有人捧个人场。每一份支持，都会变成持续更新、修复问题和打磨细节的动力；暂时不方便打赏也没关系，欢迎留下建议，或把它推荐给正在写作的朋友。</p>
+              <p className="reward-contact"><span>QQ 联系方式</span><a href="https://wpa.qq.com/msgrd?v=3&uin=13393167&site=qq&menu=yes" target="_blank" rel="noreferrer" title="点击与我 QQ 对话" onClick={(event) => { event.preventDefault(); void invoke('open_qq_contact').catch(() => { window.open('https://wpa.qq.com/msgrd?v=3&uin=13393167&site=qq&menu=yes', '_blank', 'noopener,noreferrer') }) }}>13393167</a></p>
             </div>
           </section>
         </div>
