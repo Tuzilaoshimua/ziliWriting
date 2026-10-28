@@ -1,0 +1,16 @@
+node_modules
+dist
+.vite
+*.log
+*.tsbuildinfo
+.DS_Store
+.test-appdata
+.uploads
+.tauri/update.key
+.tauri/*.key
+src-tauri/icons/icon-source.*
+.env
+.env.*
+API.txt
+upload_*
+.agnes/

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#315047" />
+    <meta name="application-name" content="字里写作" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="apple-touch-icon" href="/pwa-192.png" />
+    <link rel="icon" href="/pwa-128.png" />
+    <title>字里写作</title>
+    <style>
+      html, body, #root { width: 100%; height: 100%; margin: 0; }
+      body { background: #f6f5f2; }
+      .bootstrap-screen { height: 100%; display: grid; place-items: center; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #315047; }
+      .bootstrap-screen > div { display: grid; justify-items: center; gap: 12px; }
+      .bootstrap-mark { display: block; width: 42px; height: 42px; object-fit: contain; }
+      .bootstrap-screen span { font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"><div class="bootstrap-screen"><div><img class="bootstrap-mark" src="/pwa-128.png" alt="" /><span>正在打开作品…</span></div></div></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

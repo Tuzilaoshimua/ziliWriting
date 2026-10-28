@@ -1,0 +1,234 @@
+name: 'Release'
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v1
+        id: tauri-action
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+        with:
+          tagName: v__VERSION__
+          releaseName: '字里写作 v__VERSION__'
+          releaseBody: '请下载下方 assets 中的安装包进行安装。'
+          releaseDraft: false
+          prerelease: false
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
+
+      - name: Sync release to Gitee
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: PrincessBride
+          GITEE_REPO: crafting-words
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::error::GITEE_TOKEN is not configured; Gitee release sync cannot run."
+            exit 1
+          fi
+
+          bundle_dir="src-tauri/target/release/bundle"
+          setup_exe=$(find "$bundle_dir/nsis" -maxdepth 1 -type f -name "*-setup.exe" -print -quit)
+          setup_sig=$(find "$bundle_dir/nsis" -maxdepth 1 -type f -name "*-setup.exe.sig" -print -quit)
+
+          echo "Found files:"
+          echo "  setup.exe: $setup_exe"
+          echo "  setup.exe.sig: $setup_sig"
+
+          for required_file in "$setup_exe" "$setup_sig"; do
+            if [ ! -f "$required_file" ]; then
+              echo "::error::Required updater artifact is missing: $required_file"
+              exit 1
+            fi
+          done
+
+          # Download latest.json from GitHub Release using API (tauri-action uploads it as release asset)
+          echo "Downloading latest.json from GitHub Release..."
+          latest_json="latest.json"
+          asset_id=$(curl -sSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            | node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", c => input += c); process.stdin.on("end", () => { const r = JSON.parse(input); const a = (r.assets || []).find(x => x.name === "latest.json"); process.stdout.write(String(a ? a.id : "")); });')
+          if [ -z "$asset_id" ]; then
+            echo "::error::latest.json asset not found in GitHub Release."
+            exit 1
+          fi
+          curl -sSL -o "$latest_json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/$asset_id"
+
+          if [ ! -f "$latest_json" ] || [ ! -s "$latest_json" ]; then
+            echo "::error::Failed to download latest.json from GitHub Release."
+            exit 1
+          fi
+
+          version=$(node -e "const fs=require('fs'); const value=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(value.version || ''));" "$latest_json")
+          if [ -z "$version" ] || [ "v$version" != "$RELEASE_TAG" ]; then
+            echo "::error::Updater metadata version '$version' does not match tag '$RELEASE_TAG'."
+            exit 1
+          fi
+
+          json_id() {
+            node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { try { const value = JSON.parse(input); process.stdout.write(String(value.id || "")); } catch {} });'
+          }
+
+          json_download_url() {
+            node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { try { const value = JSON.parse(input); process.stdout.write(String(value.browser_download_url || value.download_url || "")); } catch {} });'
+          }
+
+          gitee_api="https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO"
+
+          # Build the create-release payload with node to keep UTF-8 safe,
+          # and pass access_token via query string (body token is not reliably honored).
+          RELEASE_TAG="$RELEASE_TAG" VERSION="$version" node -e '
+            process.stdout.write(JSON.stringify({
+              tag_name: process.env.RELEASE_TAG,
+              target_commitish: "master",
+              name: `字里写作 v${process.env.VERSION}`,
+              body: "请下载下方 assets 中的安装包进行安装。",
+              prerelease: false
+            }))
+          ' > gitee_release_payload.json
+
+          create_response=$(curl --silent --show-error --write-out $'\n%{http_code}' -X POST \
+            "$gitee_api/releases?access_token=$GITEE_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @gitee_release_payload.json)
+          create_status=$(printf '%s' "$create_response" | tail -n1)
+          create_body=$(printf '%s' "$create_response" | sed '$d')
+          echo "Gitee create release HTTP status: $create_status"
+          echo "Gitee create release response: $create_body"
+
+          release_response="$create_body"
+          release_id=$(printf '%s' "$create_body" | json_id)
+
+          if [ -z "$release_id" ]; then
+            echo "Create-release did not return an id (may already exist); fetching existing release..."
+            fetch_response=$(curl --silent --show-error --write-out $'\n%{http_code}' \
+              "$gitee_api/releases/tags/$RELEASE_TAG?access_token=$GITEE_TOKEN")
+            fetch_status=$(printf '%s' "$fetch_response" | tail -n1)
+            fetch_body=$(printf '%s' "$fetch_response" | sed '$d')
+            echo "Gitee fetch release HTTP status: $fetch_status"
+            echo "Gitee fetch release response: $fetch_body"
+            release_response="$fetch_body"
+            release_id=$(printf '%s' "$fetch_body" | json_id)
+          fi
+
+          if [ -z "$release_id" ]; then
+            echo "::error::Failed to get or create the Gitee release for $RELEASE_TAG."
+            echo "Gitee response: $release_response"
+            exit 1
+          fi
+
+          echo "Gitee Release ID: $release_id"
+
+          # The Windows runner's curl cannot reliably open file paths containing
+          # non-ASCII (Chinese) characters (curl error 26). Stage every artifact
+          # under an ASCII-only name before uploading.
+          safe_setup="zili-writing_${version}_x64-setup.exe"
+          safe_setup_sig="${safe_setup}.sig"
+          cp -f "$setup_exe" "$safe_setup"
+          cp -f "$setup_sig" "$safe_setup_sig"
+
+          gitee_delete_asset_by_name() {
+            local target_name="$1"
+            local release_json
+            release_json=$(curl --silent --show-error \
+              "$gitee_api/releases/$release_id?access_token=$GITEE_TOKEN")
+            local matched_ids
+            matched_ids=$(printf '%s' "$release_json" | TARGET_NAME="$target_name" node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { try { const value = JSON.parse(input); const matched = (value.assets || []).filter(a => a.name === process.env.TARGET_NAME).map(a => a.id); process.stdout.write(matched.join(" ")); } catch {} });')
+            local existing_asset_id
+            for existing_asset_id in $matched_ids; do
+              echo "Removing existing Gitee asset '$target_name' (id $existing_asset_id)..." >&2
+              curl --silent --show-error -X DELETE \
+                "$gitee_api/releases/$release_id/attach_files/$existing_asset_id?access_token=$GITEE_TOKEN" > /dev/null || true
+            done
+          }
+
+          upload_asset() {
+            local file_path="$1"
+            local upload_name="$2"
+            echo "Uploading $upload_name to Gitee..." >&2
+            gitee_delete_asset_by_name "$upload_name"
+            curl --fail-with-body --silent --show-error -X POST \
+              "$gitee_api/releases/$release_id/attach_files?access_token=$GITEE_TOKEN" \
+              -F "file=@$file_path" \
+              -F "name=$upload_name"
+          }
+
+          setup_response=$(upload_asset "$safe_setup" "$safe_setup")
+          setup_download_url=$(printf '%s' "$setup_response" | json_download_url)
+          if [ -z "$setup_download_url" ]; then
+            echo "::error::Gitee did not return a public installer download URL."
+            echo "Gitee response: $setup_response"
+            exit 1
+          fi
+          upload_asset "$safe_setup_sig" "$safe_setup_sig" > /dev/null
+
+          UPDATE_URL="$setup_download_url" node - "$latest_json" <<'NODE'
+          const fs = require('fs')
+          const path = process.argv[2]
+          const metadata = JSON.parse(fs.readFileSync(path, 'utf8'))
+          for (const platform of Object.values(metadata.platforms || {})) {
+            platform.url = process.env.UPDATE_URL
+          }
+          fs.writeFileSync(path, `${JSON.stringify(metadata, null, 2)}\n`)
+          NODE
+
+          upload_asset "$latest_json" "$latest_json" > /dev/null
+
+          existing_response=$(curl --silent --show-error \
+            "$gitee_api/contents/latest.json?ref=master&access_token=$GITEE_TOKEN")
+          existing_sha=$(printf '%s' "$existing_response" | node -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { try { const value = JSON.parse(input); process.stdout.write(String(value.sha || "")); } catch {} });')
+          latest_content=$(node -e "const fs=require('fs'); process.stdout.write(fs.readFileSync(process.argv[1]).toString('base64'));" "$latest_json")
+          publish_payload=$(LATEST_CONTENT="$latest_content" EXISTING_SHA="$existing_sha" RELEASE_TAG="$RELEASE_TAG" node -e '
+            const payload = {
+              content: process.env.LATEST_CONTENT,
+              message: `chore: publish updater metadata for ${process.env.RELEASE_TAG}`,
+              branch: "master"
+            }
+            if (process.env.EXISTING_SHA) payload.sha = process.env.EXISTING_SHA
+            process.stdout.write(JSON.stringify(payload))
+          ')
+          publish_method=POST
+          if [ -n "$existing_sha" ]; then publish_method=PUT; fi
+          curl --fail-with-body --silent --show-error -X "$publish_method" \
+            "$gitee_api/contents/latest.json?access_token=$GITEE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$publish_payload" > /dev/null
+
+          echo "Gitee release and public updater metadata published successfully."
