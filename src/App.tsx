@@ -1,4 +1,5 @@
-import { lazy, Suspense, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { lazy, Suspense, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -9,17 +10,18 @@ import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { open as openDirectoryDialog } from '@tauri-apps/plugin-dialog'
+import { open as openDirectoryDialog, save as saveFileDialog } from '@tauri-apps/plugin-dialog'
 import { readText as readClipboardText, writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager'
 import type { ImportedSection } from './data/documentFormats'
 import { deleteImageAsset, listImageAssets, readImageAsset, saveImageAsset, type ImageAsset } from './data/assetStorage'
 import { clearAttachmentScope, deleteAttachment, listAttachments, readAttachment, saveAttachment, updateAttachmentScope, type Attachment, type AttachmentScope } from './data/attachmentStorage'
 import { deleteReferenceText, listReferenceTexts, readReferenceText, saveReferenceText, type ReferenceText } from './data/referenceStorage'
 import { analyzePlainTextImport } from './data/plainTextImport'
-import { fetchAiModels, testAiConnection } from './ai/client'
+import { fetchAiModels, setCustomTaskKeyResolver, testAiConnection } from './ai/client'
 import { loadAiDataPermissions, saveAiDataPermissions, type AiDataPermissions } from './ai/privacy'
 import { applyAutomaticMemoryArchival } from './ai/memoryPolicy'
-import { estimateAgentRequestScope, runWritingAgent, sanitizeAgentReplyForDisplay, type AgentExternalSource, type AgentImageInput, type AgentMemoryMutation, type AgentToolExecution, type AgentTurn } from './ai/agentAssistant'
+import { estimateAgentRequestScope, planAgentActions, runWritingAgent, sanitizeAgentReplyForDisplay, type AgentExternalSource, type AgentImageInput, type AgentMemoryMutation, type AgentToolExecution, type AgentTurn } from './ai/agentAssistant'
+import { appendAgentControlHint, countLiteralOccurrences, describeAgentAction, describeAgentActionDanger, escapeRegExp, formatAgentActionReply, normalizedAgentName, previewAgentAction, requestMayNeedAgentActions, type AgentActionBatch, type AgentAppAction, type AgentPanel, type AgentActionResult } from './ai/agentActions'
 import { sanitizeCitationsForDisplay, stripInlineEvidenceMarkers } from './ai/citations'
 import { requestsWebResearch, researchWeb } from './ai/webResearch'
 import {
@@ -51,6 +53,8 @@ import {
 } from './ai/advancedAssistant'
 import { buildCharacterMemoryProfiles, buildProjectMemoryDigest, buildStoryThreads, detectMemoryConsistencyIssues } from './ai/memoryWorkspace'
 import { developCreativeBrief, diagnoseWritingSituation, generateOutlineLayer, OUTLINE_LEVEL_LABELS } from './ai/creativeAdvisor'
+import { analyzeOutlineCoverage, type OutlineCoverageReport } from './ai/outlineCoverage'
+import { COMPLIANCE_CATEGORY_LABELS, COMPLIANCE_SEVERITY_LABELS, loadComplianceWords, saveComplianceWords, scanCompliance, type ComplianceReport } from './ai/complianceCheck'
 import { DRAFT_MODE_LABELS, generateDraftCandidates, type DraftTask } from './ai/writingAssistant'
 import { REVIEW_CATEGORY_LABELS, reviewProjectContinuity, reviewScopedContinuity, runAutomaticChecks, type ReviewPassage, type ReviewTextScope } from './ai/reviewAssistant'
 import {
@@ -85,10 +89,22 @@ import {
 import { listDraftCandidates, saveDraftCandidate, type DraftCandidate, type DraftMode } from './data/draftStorage'
 import { listReviewIssues, replaceReviewIssues, saveReviewIssue, type ReviewIssue, type ReviewStatus } from './data/reviewStorage'
 import { emptyStyleProfile, loadStyleProfile, saveStyleProfile, type StyleProfile } from './data/styleStorage'
+import { analyzeAuthorVoice, formatVoiceFingerprint } from './ai/antiAiStyle'
+import { learnFromAuthorEdit } from './ai/authorEditLearning'
 import { analyzeStyleProfile } from './ai/styleAssistant'
 import { clearAiUsageLogs, getAiUsageSummary, type AiUsageSummary } from './data/aiUsageStorage'
 import { WheelSelect } from './components/WheelSelect'
 import { AiTaskCenter } from './components/AiTaskCenter'
+import { GlobalSearchPanel } from './components/GlobalSearchPanel'
+import { RelationshipGraphView } from './components/RelationshipGraphView'
+import { CharacterTimelineView } from './components/CharacterTimelineView'
+import { CommandPalette, type PaletteCommand } from './components/CommandPalette'
+import { buildShareDraftHtml, parseCommentBundle } from './data/shareDraft'
+import { clearChapterComments, deleteChapterComment, listChapterComments, replaceChapterComments, upsertChapterComment, type ChapterComment } from './data/commentStorage'
+import { getSyncDeviceId, getSyncDeviceLabel, hashSyncBytes, loadLastSync, readSyncManifest, readSyncPackage, saveLastSync, syncAvailable, writeSyncConflict, writeSyncPackage, type SyncManifest } from './data/syncStorage'
+import type { RelationshipGraphScope } from './ai/relationshipGraph'
+import { aggregateWritingStats, clearWritingSessions, emptyWritingStats, listWritingSessions, upsertWritingSession, type WritingSession, type WritingStatsSummary } from './data/writingStatsStorage'
+import { listOutlineLinks, setOutlineNodeLinks, type OutlineChapterLink } from './data/outlineLinkStorage'
 import {
   blobToDataUrl,
   createScene,
@@ -131,6 +147,7 @@ import {
   saveAiSettings,
   setRuntimeApiKey,
   type AiSettings,
+  type AiTaskRoute,
   type StoredAiSettings,
 } from './ai/settings'
 import { BUILTIN_API_KEY_SENTINEL } from './ai/builtinService'
@@ -217,9 +234,15 @@ import {
   Redo2,
   Scissors,
   Settings2,
+  TextSearch,
   Trash2,
   Unlock,
   Undo2,
+  Play,
+  Pause,
+  Volume2,
+  Printer,
+  TrendingUp,
   X,
 } from 'lucide-react'
 
@@ -547,7 +570,7 @@ function chapterContainsCitation(chapter: Chapter, citation: ProjectAnswerCitati
   return exactNodeMatch || quoteMatch
 }
 
-type UtilityPanelKind = 'assistant' | 'history' | 'trash' | 'assets' | 'attachments' | 'references' | 'naming'
+type UtilityPanelKind = 'assistant' | 'history' | 'trash' | 'assets' | 'attachments' | 'references' | 'naming' | 'search'
 type ClosingModalKind = 'library' | 'settings' | 'newProject' | 'reward'
 type SettingsCategory = 'appearance' | 'focus' | 'ai' | 'application'
 
@@ -559,6 +582,129 @@ function chapterWordCount(chapter: Chapter) {
   const count = chapter.plainText.replace(/\s/g, '').length
   chapterWordCountCache.set(chapter, count)
   return count
+}
+
+const draftStyleSummaryCache = new WeakMap<DraftCandidate, string>()
+
+const AI_TASK_MODEL_TARGETS: Array<[string, string]> = [
+  ['writing_agent_reply', '写作 Agent 回复'],
+  ['writing_agent_draft', '草稿生成'],
+  ['chapter_memory', '章节记忆提取'],
+  ['chapter_memory_summary', '章节摘要'],
+  ['project_qa', '全书问答'],
+  ['outline_generation', '大纲推演'],
+  ['writing_diagnosis', '写作诊断'],
+  ['project_review', '全书审稿'],
+]
+
+type WritingSessionDraft = {
+  id: string
+  projectId: string
+  chapterId: string
+  startedAt: number
+  lastActivityAt: number
+  lastLength: number
+  wordsAdded: number
+  wordsRemoved: number
+  activeMs: number
+  persistedAt: number
+  persistedAdded: number
+  persistedRemoved: number
+  persistedActiveMs: number
+}
+
+function draftStyleSummary(candidate: DraftCandidate) {
+  const cached = draftStyleSummaryCache.get(candidate)
+  if (cached !== undefined) return cached
+  const stats = analyzeAuthorVoice([candidate.text])
+  const variation = stats.averageSentenceLength > 0 ? stats.sentenceLengthStdDev / stats.averageSentenceLength : 0
+  const summary = `句长波动 ${(variation * 100).toFixed(0)}% · 对白 ${(stats.dialogueRatio * 100).toFixed(0)}% · 副词 ${stats.adverbPer1000.toFixed(1)}/千字`
+  draftStyleSummaryCache.set(candidate, summary)
+  return summary
+}
+
+function chapterTextToHtml(source: string) {
+  const normalized = source.replace(/\r\n?/g, '\n').trim()
+  if (!normalized) return '<p></p>'
+  return normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
+    .join('')
+}
+
+function appendChapterTextHtml(currentHtml: string, additionHtml: string) {
+  const base = currentHtml.trim() && currentHtml.trim() !== '<p></p>' ? currentHtml : ''
+  return `${base}${additionHtml}`
+}
+
+function AgentActionReview({
+  actions,
+  previews,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  actions: AgentAppAction[]
+  previews?: string[]
+  busy: boolean
+  onConfirm: (actions: AgentAppAction[]) => void
+  onCancel: () => void
+}) {
+  const [selected, setSelected] = useState<boolean[]>(() => actions.map(() => true))
+  const chosen = actions.filter((_action, index) => selected[index] !== false)
+  const toggle = (index: number) => setSelected((current) => current.map((value, itemIndex) => itemIndex === index ? !value : value))
+  return <section className="agent-action-review">
+    <header>
+      <div><CheckCircle2 size={14} /><strong>操作确认</strong></div>
+      <span>已选 {chosen.length}/{actions.length} 项</span>
+    </header>
+    <ol>
+      {actions.map((action, index) => {
+        const danger = describeAgentActionDanger(action)
+        return <li className={danger ? 'danger' : ''} key={`${action.type}:${index}`}>
+          <label>
+            <input type="checkbox" checked={selected[index] !== false} onChange={() => toggle(index)} />
+            <span>{describeAgentAction(action)}</span>
+          </label>
+          {previews?.[index] ? <small className="agent-action-impact">{previews[index]}</small> : null}
+          {danger && <small className="agent-action-danger">{action.type === 'delete_chapter' ? '章节会移到回收站，可恢复。' : '影响范围较大，请确认目标无误。'}</small>}
+        </li>
+      })}
+    </ol>
+    <footer>
+      <small>确认后直接修改，并在修改前自动保存版本。</small>
+      <div>
+        <button disabled={busy} onClick={onCancel}>取消</button>
+        <button className="accept" disabled={busy || chosen.length === 0} onClick={() => onConfirm(chosen)}>
+          {busy ? '执行中…' : `确认执行 ${chosen.length} 项`}
+        </button>
+      </div>
+    </footer>
+  </section>
+}
+
+function agentActionToolName(action: AgentAppAction): AgentToolExecution['name'] {
+  if (action.type === 'rename_character') return 'rename_character'
+  if (action.type === 'replace_text') return 'replace_text'
+  if (action.type === 'update_story_memory' || action.type === 'merge_characters' || action.type === 'set_thread_lifecycle') return 'update_story_memory'
+  if (action.type === 'write_chapter' || action.type === 'create_chapter') return 'edit_chapter'
+  if (action.type === 'rename_chapter' || action.type === 'delete_chapter' || action.type === 'move_chapter') return 'manage_chapter'
+  return action.type as 'open_chapter' | 'open_panel'
+}
+
+function agentActionLabel(action: AgentAppAction) {
+  if (action.type === 'rename_character') return '角色改名'
+  if (action.type === 'replace_text') return '替换正文'
+  if (action.type === 'write_chapter') return action.mode === 'append' ? '追加正文' : '写入正文'
+  if (action.type === 'create_chapter') return '新建章节'
+  if (action.type === 'rename_chapter') return '修改章节标题'
+  if (action.type === 'delete_chapter') return '删除章节'
+  if (action.type === 'move_chapter') return '移动章节'
+  if (action.type === 'update_story_memory') return '更新人物资料'
+  if (action.type === 'merge_characters') return '合并人物'
+  if (action.type === 'set_thread_lifecycle') return '更新线索状态'
+  if (action.type === 'open_chapter') return '打开章节'
+  return '打开面板'
 }
 
 async function materializeImportedHtml(
@@ -605,6 +751,12 @@ type WritingPreferences = {
   automaticChecksEnabled: boolean
   automaticMemoryEnabled: boolean
   projectSavePath: string
+  autoBackupEnabled: boolean
+  autoBackupIntervalMinutes: number
+  backupRetentionCount: number
+  ttsRate: number
+  keymap: Record<string, string>
+  syncDirectory: string
 }
 
 type ExportReport = {
@@ -641,7 +793,29 @@ const DEFAULT_PREFERENCES: WritingPreferences = {
   automaticChecksEnabled: true,
   automaticMemoryEnabled: false,
   projectSavePath: '',
+  autoBackupEnabled: true,
+  autoBackupIntervalMinutes: 10,
+  backupRetentionCount: 10,
+  ttsRate: 1,
+  keymap: {
+    palette: 'Ctrl+K',
+    search: 'Ctrl+Shift+K',
+    focus: 'Ctrl+Shift+F',
+    backup: 'Ctrl+Shift+B',
+    stats: 'Ctrl+Shift+Y',
+    compliance: 'Ctrl+Shift+G',
+  },
+  syncDirectory: '',
 }
+
+export const KEYMAP_COMMANDS: Array<[string, string]> = [
+  ['palette', '命令面板'],
+  ['search', '全局搜索'],
+  ['focus', '专注模式'],
+  ['backup', '立即备份'],
+  ['stats', '写作统计'],
+  ['compliance', '合规自查'],
+]
 
 const PROJECT_TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
@@ -677,14 +851,64 @@ function loadPreferences(): WritingPreferences {
     const uiTextColor = typeof stored.uiTextColor === 'string' && /^#[0-9a-f]{6}$/i.test(stored.uiTextColor)
       ? stored.uiTextColor.toUpperCase()
       : ''
-    return { ...DEFAULT_PREFERENCES, ...stored, uiFontSize, uiTextColor }
+    const storedKeymap = stored.keymap && typeof stored.keymap === 'object' && !Array.isArray(stored.keymap) ? stored.keymap : {}
+    const keymap: Record<string, string> = { ...DEFAULT_PREFERENCES.keymap }
+    for (const [id, value] of Object.entries(storedKeymap)) {
+      if (typeof value === 'string') keymap[id] = value
+    }
+    return { ...DEFAULT_PREFERENCES, ...stored, uiFontSize, uiTextColor, keymap }
   } catch {
     return DEFAULT_PREFERENCES
   }
 }
 
-function createUiTypographyVariables(uiFontSize: number) {
-  const scale = Math.max(10, Math.min(16, uiFontSize)) / 12
+export const SHORTCUT_MODIFIERS: Record<string, string> = {
+  ctrl: 'Ctrl',
+  control: 'Ctrl',
+  shift: 'Shift',
+  alt: 'Alt',
+  option: 'Alt',
+  meta: 'Meta',
+  cmd: 'Meta',
+  command: 'Meta',
+  win: 'Meta',
+  super: 'Meta',
+}
+
+export function normalizeShortcut(value: string): string {
+  const parts = value.split('+').map((part) => part.trim()).filter(Boolean)
+  if (parts.length === 0) return ''
+  const key = parts.pop() as string
+  if (!key) return ''
+  const modifiers = [...new Set(parts.map((part) => SHORTCUT_MODIFIERS[part.toLowerCase()] ?? part.toUpperCase()))]
+  const order = ['Ctrl', 'Meta', 'Alt', 'Shift']
+  modifiers.sort((left, right) => {
+    const leftIndex = order.indexOf(left)
+    const rightIndex = order.indexOf(right)
+    return (leftIndex < 0 ? 99 : leftIndex) - (rightIndex < 0 ? 99 : rightIndex)
+  })
+  const normalizedKey = key.length === 1 ? key.toUpperCase() : key[0].toUpperCase() + key.slice(1).toLowerCase()
+  return [...modifiers, normalizedKey].join('+')
+}
+
+export function shortcutMatches(event: KeyboardEvent, combo: string): boolean {
+  const normalized = normalizeShortcut(combo)
+  if (!normalized) return false
+  const parts = normalized.split('+')
+  const key = (parts.pop() ?? '').toLowerCase()
+  const ctrl = event.ctrlKey || event.metaKey
+  if (parts.includes('Ctrl') !== ctrl) return false
+  if (parts.includes('Shift') !== event.shiftKey) return false
+  if (parts.includes('Alt') !== event.altKey) return false
+  if (parts.includes('Meta') && !event.metaKey) return false
+  const eventKey = event.key.toLowerCase()
+  if (eventKey === key) return true
+  if (key === 'space' && event.key === ' ') return true
+  if (key === 'esc' && eventKey === 'escape') return true
+  return false
+}
+
+function createUiTypographyVariables(uiFontSize: number) {  const scale = Math.max(10, Math.min(16, uiFontSize)) / 12
   const variables: Record<string, string> = {}
   for (let size = 7; size <= 16; size += 1) {
     variables[`--ui-font-${size}`] = `${(size * scale).toFixed(2)}px`
@@ -695,6 +919,8 @@ function createUiTypographyVariables(uiFontSize: number) {
 
 function App() {
   const [project, setProject] = useState<ProjectState>(createEmptyProject)
+  const projectRef = useRef(project)
+  projectRef.current = project
   const [hydrated, setHydrated] = useState(false)
   const [focusMode, setFocusMode] = useState(() => localStorage.getItem('zili-writing-focus-mode-v1') === 'true')
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760)
@@ -709,6 +935,8 @@ function App() {
   const [memorySearch, setMemorySearch] = useState('')
   const [selectedCharacterProfileId, setSelectedCharacterProfileId] = useState<string | null>(null)
   const [characterDetailSection, setCharacterDetailSection] = useState<'profile' | 'state' | 'relationships' | 'timeline'>('profile')
+  const [characterView, setCharacterView] = useState<'list' | 'graph' | 'timeline'>('list')
+  const [relationshipScope, setRelationshipScope] = useState<RelationshipGraphScope>({ mode: 'untilChapter' })
   const [projectMemoryLoading, setProjectMemoryLoading] = useState(false)
   const [memoryFilter, setMemoryFilter] = useState<MemoryCandidateStatus>('candidate')
   const [memorySummaryExpanded, setMemorySummaryExpanded] = useState(false)
@@ -735,6 +963,8 @@ function App() {
   const [agentMessages, setAgentMessages] = useState<AiConversationMessage[]>([])
   const [agentInput, setAgentInput] = useState('')
   const [agentBusy, setAgentBusy] = useState(false)
+  const [executingActionMessageId, setExecutingActionMessageId] = useState<string | null>(null)
+  const [undoingBatchMessageId, setUndoingBatchMessageId] = useState<string | null>(null)
   const [agentTaskPhase, setAgentTaskPhase] = useState<'idle' | 'retrieval' | 'external' | 'generation' | 'validation' | 'complete' | 'failed'>('idle')
   const [agentMessage, setAgentMessage] = useState('')
   const [agentSelection, setAgentSelection] = useState({ from: 1, to: 1, text: '' })
@@ -759,6 +989,8 @@ function App() {
   const [creativeQuestions, setCreativeQuestions] = useState<string[]>([])
   const [outlineLevel, setOutlineLevel] = useState<OutlineLevel>('stage')
   const [outlineInstruction, setOutlineInstruction] = useState('')
+  const [outlineCoverage, setOutlineCoverage] = useState<OutlineCoverageReport | null>(null)
+  const [outlineLinks, setOutlineLinks] = useState<OutlineChapterLink[]>([])
   const [advisorNote, setAdvisorNote] = useState('')
   const [advisorResult, setAdvisorResult] = useState<AdvisorSession | null>(null)
   const [advisorConversation, setAdvisorConversation] = useState<AiConversation | null>(null)
@@ -772,6 +1004,9 @@ function App() {
   const [draftMustAvoid, setDraftMustAvoid] = useState('')
   const [draftNoNewFacts, setDraftNoNewFacts] = useState(true)
   const [draftStyleInstruction, setDraftStyleInstruction] = useState('')
+  const [draftPov, setDraftPov] = useState('')
+  const [draftEndingBeat, setDraftEndingBeat] = useState('')
+  const [draftWithhold, setDraftWithhold] = useState('')
   const [draftCandidates, setDraftCandidates] = useState<DraftCandidate[]>([])
   const [previewDraftId, setPreviewDraftId] = useState<string | null>(null)
   const [draftCompareIds, setDraftCompareIds] = useState<string[]>([])
@@ -780,6 +1015,8 @@ function App() {
   const [draftMessage, setDraftMessage] = useState('')
   const [acceptingDraftId, setAcceptingDraftId] = useState<string | null>(null)
   const [reviewIssues, setReviewIssues] = useState<ReviewIssue[]>([])
+  const [pendingReviewRewrite, setPendingReviewRewrite] = useState<{ chapterId: string; nodeId: string; suggestion: string; detail: string } | null>(null)
+  const [pendingDraftGenerate, setPendingDraftGenerate] = useState(false)
   const [reviewStatusFilter, setReviewStatusFilter] = useState<ReviewStatus>('open')
   const [reviewScope, setReviewScope] = useState<ReviewTextScope | 'project'>('chapter')
   const [reviewRangeStartId, setReviewRangeStartId] = useState(project.activeChapterId)
@@ -794,10 +1031,28 @@ function App() {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachmentBusy, setAttachmentBusy] = useState(false)
   const [referencesOpen, setReferencesOpen] = useState(false)
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
+  const [searchJumpTarget, setSearchJumpTarget] = useState<{ chapterId: string; needle: string } | null>(null)
   const [referenceTexts, setReferenceTexts] = useState<ReferenceText[]>([])
   const [referenceBusy, setReferenceBusy] = useState(false)
   const [referenceView, setReferenceView] = useState<'files' | 'style'>('files')
   const [styleProfile, setStyleProfile] = useState<StyleProfile>(() => emptyStyleProfile(project.id))
+  const [styleDraft, setStyleDraft] = useState(() => ({
+    bannedPhrases: '',
+    bannedPatterns: '',
+    voiceSamples: '',
+    styleTaboos: '',
+    learnedPreferences: '',
+  }))
+  useEffect(() => {
+    setStyleDraft({
+      bannedPhrases: (styleProfile.bannedPhrases ?? []).join('\n'),
+      bannedPatterns: (styleProfile.bannedPatterns ?? []).join('\n'),
+      voiceSamples: (styleProfile.voiceSamples ?? []).join('\n\n'),
+      styleTaboos: styleProfile.styleTaboos ?? '',
+      learnedPreferences: (styleProfile.learnedPreferences ?? []).join('\n'),
+    })
+  }, [styleProfile.projectId, styleProfile.updatedAt])
   const [styleBusy, setStyleBusy] = useState(false)
   const [styleMessage, setStyleMessage] = useState('')
   const [attachmentFilter, setAttachmentFilter] = useState<'all' | 'project' | 'volume' | 'chapter'>('all')
@@ -818,8 +1073,25 @@ function App() {
   const [rewardOpen, setRewardOpen] = useState(false)
   const [closingModal, setClosingModal] = useState<ClosingModalKind | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
-  const [exportBusy, setExportBusy] = useState<'md' | 'docx' | 'epub' | null>(null)
+  const [exportBusy, setExportBusy] = useState<'md' | 'docx' | 'epub' | 'pdf' | null>(null)
   const [exportReport, setExportReport] = useState<ExportReport | null>(null)
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
+  const [complianceOpen, setComplianceOpen] = useState(false)
+  const [complianceScope, setComplianceScope] = useState<'book' | 'chapter'>('book')
+  const [complianceWordsText, setComplianceWordsText] = useState(() => loadComplianceWords().join('\n'))
+  const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [chapterComments, setChapterComments] = useState<ChapterComment[]>([])
+  const commentsFileRef = useRef<HTMLInputElement | null>(null)
+  const [syncBusy, setSyncBusy] = useState<'push' | 'pull' | 'check' | null>(null)
+  const [syncMessage, setSyncMessage] = useState('')
+  const [syncRemote, setSyncRemote] = useState<SyncManifest | null>(null)
+  const [taskModelTask, setTaskModelTask] = useState(AI_TASK_MODEL_TARGETS[0][0])
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [statsClearing, setStatsClearing] = useState(false)
+  const [writingStats, setWritingStats] = useState<WritingStatsSummary>(() => emptyWritingStats())
   const [pendingVolumeDeleteId, setPendingVolumeDeleteId] = useState<string | null>(null)
   const [collapsedVolumes, setCollapsedVolumes] = useState<Set<string>>(() => {
     try {
@@ -859,6 +1131,8 @@ function App() {
   const [findQuery, setFindQuery] = useState('')
   const [replaceText, setReplaceText] = useState('')
   const [findCount, setFindCount] = useState(0)
+  const [ttsSpeaking, setTtsSpeaking] = useState(false)
+  const [ttsPaused, setTtsPaused] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
   const [closingUtilityPanel, setClosingUtilityPanel] = useState<UtilityPanelKind | null>(null)
   const [suppressPanelEntry, setSuppressPanelEntry] = useState<UtilityPanelKind | null>(null)
@@ -885,6 +1159,9 @@ function App() {
   const saveTimer = useRef<number | null>(null)
   const projectBackupTimer = useRef<number | null>(null)
   const projectBackupBusy = useRef(false)
+  const autoBackupRunner = useRef<(() => Promise<void>) | null>(null)
+  const writingSessionRef = useRef<WritingSessionDraft | null>(null)
+  const commandRunnerRef = useRef<Record<string, () => void>>({})
   const importProgressTimer = useRef<number | null>(null)
   const importInput = useRef<HTMLInputElement | null>(null)
   const projectImportRequested = useRef(false)
@@ -894,6 +1171,7 @@ function App() {
   const referenceInput = useRef<HTMLInputElement | null>(null)
   const insertUploadedImage = useRef(false)
   const findInput = useRef<HTMLInputElement | null>(null)
+  const replaceInput = useRef<HTMLInputElement | null>(null)
   const paperRef = useRef<HTMLDivElement | null>(null)
   const scenePanelCloseSequence = useRef(0)
   const volumeCollapseTimers = useRef<Map<string, number>>(new Map())
@@ -920,6 +1198,8 @@ function App() {
   const offlineNamingRequestRef = useRef(0)
   const offlineNamingContextRef = useRef({ projectId: project.id, open: namingOpen })
   const agentController = useRef<AbortController | null>(null)
+  const executingAgentActionsRef = useRef<string | null>(null)
+  const undoingBatchRef = useRef<string | null>(null)
   const advisorController = useRef<AbortController | null>(null)
   const draftController = useRef<AbortController | null>(null)
   const reviewController = useRef<AbortController | null>(null)
@@ -936,6 +1216,18 @@ function App() {
   useEffect(() => {
     if (isTauri()) return
     void getWebStorageEstimate().then(setWebStorageEstimate).catch(() => setWebStorageEstimate(null))
+  }, [])
+
+  // 混用路由：某个任务指定了用户 API 时，按该端点取回已保存的密钥（内置服务模式下内存里没有它）。
+  useEffect(() => {
+    setCustomTaskKeyResolver(async (baseUrl) => {
+      try {
+        return await loadApiKeyCredential({ ...aiSettingsRef.current, providerId: 'openai-compatible', baseUrl })
+      } catch {
+        return null
+      }
+    })
+    return () => setCustomTaskKeyResolver(null)
   }, [])
 
   const requestWebStoragePersistence = async () => {
@@ -1372,19 +1664,21 @@ function App() {
           : '连接成功，服务未返回模型列表'
       setAiConnectionStatus('success')
       setAiConnectionMessage(modelMessage)
+      // 内置服务的端点与模型名不写入"我的备选"，避免把内置模型名暴露成用户可选项。
+      const rememberEndpoint = !isBuiltinAgnesProvider(testedSettings)
       const connectedSettings = {
         ...testedSettings,
         model: selectedModel,
-        successfulBaseUrls: rememberAiEndpoint(testedSettings.successfulBaseUrls, testedSettings.baseUrl),
-        successfulModels: rememberAiEndpointModel(testedSettings.successfulModels, testedSettings.baseUrl, selectedModel),
+        successfulBaseUrls: rememberEndpoint ? rememberAiEndpoint(testedSettings.successfulBaseUrls, testedSettings.baseUrl) : testedSettings.successfulBaseUrls,
+        successfulModels: rememberEndpoint ? rememberAiEndpointModel(testedSettings.successfulModels, testedSettings.baseUrl, selectedModel) : testedSettings.successfulModels,
       }
       setAiSettings((current) => {
         if (aiApiKeyRef.current !== testedApiKey || aiConnectionIdentity(current, testedApiKey) !== testedIdentity) return current
         return {
           ...current,
           model: aiEndpointKey(current.baseUrl) === aiEndpointKey(testedSettings.baseUrl) ? selectedModel : current.model,
-          successfulBaseUrls: rememberAiEndpoint(current.successfulBaseUrls, testedSettings.baseUrl),
-          successfulModels: rememberAiEndpointModel(current.successfulModels, testedSettings.baseUrl, selectedModel),
+          successfulBaseUrls: rememberEndpoint ? rememberAiEndpoint(current.successfulBaseUrls, testedSettings.baseUrl) : current.successfulBaseUrls,
+          successfulModels: rememberEndpoint ? rememberAiEndpointModel(current.successfulModels, testedSettings.baseUrl, selectedModel) : current.successfulModels,
         }
       })
       if (isCurrentTest()) void persistAiCredential(connectedSettings, testedApiKey)
@@ -2122,6 +2416,52 @@ function App() {
     }
   }
 
+  const pasteAgentImages = (event: ReactClipboardEvent<HTMLElement>) => {
+    const clipboard = event.clipboardData
+    if (!clipboard) return
+    const files = Array.from(clipboard.items ?? [])
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file))
+    if (files.length === 0) {
+      files.push(...Array.from(clipboard.files ?? []).filter((file) => file.type.startsWith('image/')))
+    }
+    if (files.length > 0) {
+      event.preventDefault()
+      event.stopPropagation()
+      for (const file of files.slice(0, 3)) void uploadAgentImage(file)
+      return
+    }
+    const html = clipboard.getData('text/html')
+    const dataUrl = html.match(/<img[^>]+src=["'](data:image\/[^"']+)["']/i)?.[1]
+    if (!dataUrl) return
+    event.preventDefault()
+    event.stopPropagation()
+    void (async () => {
+      try {
+        const commaIndex = dataUrl.indexOf(',')
+        if (commaIndex < 0) return
+        const header = dataUrl.slice(0, commaIndex)
+        const payload = dataUrl.slice(commaIndex + 1)
+        const mediaType = header.match(/^data:([^;]+)/)?.[1] ?? 'image/png'
+        if (!mediaType.startsWith('image/') || !payload) return
+        let bytes: Uint8Array
+        if (/;base64,/i.test(header)) {
+          const binary = atob(payload.replace(/\s/g, ''))
+          bytes = new Uint8Array(binary.length)
+          for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+        } else {
+          const decoded = decodeURIComponent(payload)
+          bytes = new TextEncoder().encode(decoded)
+        }
+        const extension = mediaType.split('/')[1]?.replace('jpeg', 'jpg') || 'png'
+        await uploadAgentImage(new File([bytes], `粘贴图片-${Date.now()}.${extension}`, { type: mediaType }))
+      } catch {
+        await showAlert('无法读取剪贴板中的图片，请改用上传按钮。', '粘贴图片失败')
+      }
+    })()
+  }
+
   const executeAgentNavigationTools = async (request: string): Promise<AgentToolExecution[]> => {
     const tools: AgentToolExecution[] = []
     const openedChapter = /(?:打开|跳转到|定位到)\s*(?:第\s*)?(\d{1,6})\s*章/.exec(request)
@@ -2202,6 +2542,677 @@ function App() {
       title: recordTitle(kind, titleInput, activeScene), inputJson: JSON.stringify(intent), outputJson: JSON.stringify(result), createdAt: now, updatedAt: now,
     })
     return { kind, result, reply: formatAdvancedAgentResult(intent, result) }
+  }
+
+  /**
+   * 真正执行字里助手的程序操作。
+   * 所有正文修改都会先写入版本历史，再更新作品状态；编辑器会跟随 contentHash 自动刷新。
+   */
+  const executeAgentActions = async (actions: AgentAppAction[], onBatch?: (batch: AgentActionBatch) => void): Promise<AgentActionResult[]> => {
+    const results: AgentActionResult[] = []
+    let working = projectRef.current
+    const batch: AgentActionBatch = {
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+      status: 'applied',
+      summary: '',
+      undoable: true,
+      chapters: [],
+      memory: [],
+      chapterOrderBefore: working.chapters.map((chapter) => chapter.id),
+    }
+    const rememberChapterSnapshot = async (before: Chapter, after: Chapter) => {
+      const revision = await createRevision(before, '字里助手自动修改前保存') ?? (await listRevisions(before.id))[0]
+      if (!revision) {
+        batch.undoable = false
+        return
+      }
+      const existing = batch.chapters.find((snapshot) => snapshot.chapterId === before.id)
+      if (existing) {
+        existing.afterContentHash = after.contentHash
+        existing.afterTitle = after.title
+      } else {
+        batch.chapters.push({
+          chapterId: before.id,
+          beforeRevisionId: revision.id,
+          afterContentHash: after.contentHash,
+          afterTitle: after.title,
+        })
+      }
+    }
+    const rememberMemorySnapshot = (candidate: MemoryCandidate, afterUpdatedAt: number) => {
+      const existing = batch.memory.find((snapshot) => snapshot.candidate.id === candidate.id)
+      if (existing) {
+        existing.afterUpdatedAt = afterUpdatedAt
+        return
+      }
+      batch.memory.push({ candidate: { ...candidate, metadata: { ...candidate.metadata } }, afterUpdatedAt })
+    }
+    const applyProjectState = (next: ProjectState) => {
+      if (projectRef.current.id !== next.id) throw new Error('作品已经切换，操作已停止，请重新发送指令')
+      setProject(next)
+    }
+    const canModifyChapter = (chapter: Chapter) => chapter.id === activeChapter.id
+      ? aiDataPermissions.currentChapter
+      : aiDataPermissions.otherChapters
+    const currentChapter = () => working.chapters.find((chapter) => chapter.id === working.activeChapterId) ?? working.chapters[0]
+    const resolveChapter = (title?: string) => {
+      const source = title?.trim()
+      if (!source) return currentChapter() ?? null
+      const wanted = normalizedAgentName(source)
+      if (!wanted) return null
+      return working.chapters.find((chapter) => normalizedAgentName(chapter.title) === wanted)
+        ?? working.chapters.find((chapter) => {
+          const known = normalizedAgentName(chapter.title)
+          return known.length >= 2 && (known.includes(wanted) || wanted.includes(known))
+        })
+        ?? null
+    }
+    const scopeChapters = (scope: 'current' | 'all' | 'chapters' | undefined, titles?: string[]) => {
+      const permitted = (chapter: Chapter) => canModifyChapter(chapter)
+      if (scope === 'current') return [currentChapter()].filter((chapter): chapter is Chapter => Boolean(chapter) && permitted(chapter))
+      if (scope === 'chapters') {
+        return [...new Map((titles ?? []).map((title) => resolveChapter(title)).filter((chapter): chapter is Chapter => Boolean(chapter)).filter(permitted).map((chapter) => [chapter.id, chapter])).values()]
+      }
+      return working.chapters.filter(permitted)
+    }
+    const rebuildChapter = (chapter: Chapter, nextHtml: string) => {
+      if (nextHtml === chapter.content) return chapter
+      const document = createChapterDocument(nextHtml)
+      return {
+        ...chapter,
+        content: document.content,
+        contentJson: document.contentJson,
+        plainText: document.plainText,
+        contentHash: document.contentHash,
+        revisionNumber: chapter.revisionNumber + 1,
+        updatedAt: Date.now(),
+      }
+    }
+    const commitChapterChanges = async (pairs: Array<{ before: Chapter; after: Chapter }>) => {
+      const changed = pairs.filter((pair) => pair.after !== pair.before)
+      if (changed.length === 0) return
+      for (const pair of changed) await rememberChapterSnapshot(pair.before, pair.after)
+      const byId = new Map(changed.map((pair) => [pair.after.id, pair.after]))
+      working = { ...working, chapters: working.chapters.map((chapter) => byId.get(chapter.id) ?? chapter) }
+      applyProjectState(working)
+    }
+    const refreshMemoryAfterEdit = async () => {
+      const chapterId = currentChapter()?.id ?? activeChapter.id
+      const [bundle, bundles] = await Promise.all([
+        chapterId ? getChapterMemory(working.id, chapterId) : Promise.resolve({ memory: null, candidates: [] }),
+        getProjectMemory(working.id),
+      ])
+      setMemoryBundle(bundle)
+      setProjectMemoryBundles(bundles)
+    }
+    const syncCharacterMemory = async (names: string[], newName?: string, addAliases: string[] = [], removeAliases: string[] = []) => {
+      const bundles = await getProjectMemory(working.id)
+      const all = bundles.flatMap((bundle) => bundle.candidates)
+      const wanted = new Set(names.map(normalizedAgentName).filter(Boolean))
+      if (wanted.size === 0) return 0
+      const targets = all.filter((candidate) => candidate.kind === 'character'
+        && [candidate.title, ...(candidate.metadata.aliases ?? [])].some((name) => wanted.has(normalizedAgentName(name))))
+      if (targets.length === 0) return 0
+      const removed = new Set(removeAliases.map(normalizedAgentName).filter(Boolean))
+      const updatedAt = Date.now()
+      const finalTitle = newName?.trim()
+      for (const candidate of targets) {
+        const aliases = [...new Set([...(candidate.metadata.aliases ?? []), ...names, ...addAliases])]
+          .filter((name) => normalizedAgentName(name) !== normalizedAgentName(finalTitle ?? candidate.title))
+          .filter((name) => !removed.has(normalizedAgentName(name)))
+          .slice(0, 20)
+        await updateMemoryCandidate({
+          ...candidate,
+          ...(finalTitle ? { title: finalTitle } : {}),
+          metadata: { ...candidate.metadata, aliases },
+          updatedAt,
+        })
+        rememberMemorySnapshot(candidate, updatedAt)
+      }
+      await refreshMemoryAfterEdit()
+      return targets.length
+    }
+    const openPanel = async (panel: AgentPanel) => {
+      if (panel === 'trash') { await openTrash(); return }
+      if (panel === 'references') { await openReferences(); return }
+      if (panel === 'assets') { await openAssets(); return }
+      if (panel === 'attachments') { await openAttachments(); return }
+      if (panel === 'naming') { openNaming(); return }
+      setAssistantOpen(true)
+      if (panel === 'memory') {
+        setAssistantView('memory')
+        setMemoryScope('chapter')
+        setMemoryFilter('candidate')
+      } else if (panel === 'review') {
+        await openReviewAssistant()
+      } else if (panel === 'draft') {
+        await openDraftAssistant()
+      } else if (panel === 'advisor') {
+        setAssistantView('advisor')
+      } else {
+        setAssistantView('tools')
+      }
+    }
+
+    for (const action of actions) {
+      try {
+        if (action.type === 'open_chapter') {
+          const target = resolveChapter(action.chapterTitle)
+          if (!target) throw new Error(`没有找到章节“${action.chapterTitle}”`)
+          await openChapter(target.id)
+          working = {
+            ...working,
+            activeChapterId: target.id,
+            activeSceneId: working.scenes.find((scene) => scene.chapterId === target.id)?.id ?? working.activeSceneId,
+          }
+          results.push({ action, status: 'complete', detail: `已打开章节“${target.title}”` })
+          continue
+        }
+        if (action.type === 'open_panel') {
+          await openPanel(action.panel)
+          results.push({ action, status: 'complete', detail: `已打开“${action.panel}”面板` })
+          continue
+        }
+        if (action.type === 'replace_text') {
+          const targets = scopeChapters(action.scope, action.chapterTitles)
+          if (targets.length === 0) throw new Error('指定的章节不存在')
+          let pattern: RegExp | null = null
+          if (action.regex) {
+            try {
+              pattern = new RegExp(action.find, 'g')
+            } catch {
+              throw new Error('正则表达式无效')
+            }
+          }
+          const pairs: Array<{ before: Chapter; after: Chapter }> = []
+          let total = 0
+          const changedTitles: string[] = []
+          for (const chapter of targets) {
+            const plain = chapter.plainText
+            const count = pattern
+              ? (plain.match(new RegExp(action.find, 'g'))?.length ?? 0)
+              : countLiteralOccurrences(plain, action.find)
+            if (count === 0) continue
+            const escapedReplacement = escapeHtml(action.replace).replace(/\$/g, '$$$$')
+            const nextHtml = pattern
+              ? chapter.content.replace(pattern, escapedReplacement)
+              : chapter.content.split(action.find).join(escapedReplacement)
+            const after = rebuildChapter(chapter, nextHtml)
+            if (after === chapter) continue
+            pairs.push({ before: chapter, after })
+            total += count
+            changedTitles.push(chapter.title)
+          }
+          if (pairs.length === 0) throw new Error(`没有在正文中找到“${action.find}”`)
+          await commitChapterChanges(pairs)
+          results.push({
+            action, status: 'complete', changed: true, chapterTitles: changedTitles,
+            detail: `替换“${action.find}”→“${action.replace}”：修改 ${pairs.length} 章，共 ${total} 处`,
+          })
+          continue
+        }
+        if (action.type === 'rename_character') {
+          const targets = scopeChapters(action.scope, action.chapterTitles)
+          if (targets.length === 0) throw new Error('指定的章节不存在')
+          const names = [...new Set(action.names.map((name) => name.trim()).filter(Boolean))]
+            .filter((name) => name !== action.newName)
+            .sort((left, right) => right.length - left.length)
+          const pairs: Array<{ before: Chapter; after: Chapter }> = []
+          let total = 0
+          const changedTitles: string[] = []
+          for (const chapter of targets) {
+            let nextHtml = chapter.content
+            let count = 0
+            names.forEach((name, index) => {
+              const occurrences = countLiteralOccurrences(chapter.plainText, name)
+              if (occurrences === 0) return
+              count += occurrences
+              nextHtml = nextHtml.split(name).join(`\u0001${index}\u0001`)
+            })
+            if (count === 0) continue
+            nextHtml = nextHtml.replace(/\u0001(\d+)\u0001/g, () => escapeHtml(action.newName))
+            const after = rebuildChapter(chapter, nextHtml)
+            if (after === chapter) continue
+            pairs.push({ before: chapter, after })
+            total += count
+            changedTitles.push(chapter.title)
+          }
+          if (pairs.length === 0) throw new Error(`没有在正文中找到${names.map((name) => `“${name}”`).join('、')}`)
+          await commitChapterChanges(pairs)
+          const memoryUpdated = await syncCharacterMemory(names, action.newName, action.aliases ?? [])
+          results.push({
+            action, status: 'complete', changed: true, chapterTitles: changedTitles,
+            detail: `${names.map((name) => `“${name}”`).join('、')}→“${action.newName}”：修改 ${pairs.length} 章，共 ${total} 处${memoryUpdated ? `；人物资料已更新 ${memoryUpdated} 条` : ''}`,
+          })
+          continue
+        }
+        if (action.type === 'write_chapter') {
+          const target = resolveChapter(action.chapterTitle)
+          if (!target) throw new Error(`没有找到章节“${action.chapterTitle ?? ''}”`)
+          if (!canModifyChapter(target)) throw new Error(`当前作品未授权写入章节“${target.title}”`)
+          const addition = chapterTextToHtml(action.text)
+          const nextHtml = action.mode === 'append' ? appendChapterTextHtml(target.content, addition) : addition
+          const after = rebuildChapter(target, nextHtml)
+          if (after === target) throw new Error('正文没有变化')
+          await commitChapterChanges([{ before: target, after }])
+          results.push({
+            action, status: 'complete', changed: true, chapterTitles: [target.title],
+            detail: `${action.mode === 'append' ? '已追加到' : '已改写'}章节“${target.title}”（${after.plainText.replace(/\s/g, '').length} 字）`,
+          })
+          continue
+        }
+        if (action.type === 'create_chapter') {
+          const afterChapter = action.afterChapterTitle ? resolveChapter(action.afterChapterTitle) : null
+          if (action.afterChapterTitle && !afterChapter) throw new Error(`没有找到章节“${action.afterChapterTitle}”`)
+          const volumeId = afterChapter?.volumeId ?? currentChapter()?.volumeId ?? working.volumes[0]?.id
+          if (!volumeId) throw new Error('作品还没有分卷，无法新建章节')
+          let title = action.title.trim()
+          let suffix = 2
+          while (working.chapters.some((chapter) => normalizedAgentName(chapter.title) === normalizedAgentName(title))) {
+            title = `${action.title.trim()}（${suffix}）`
+            suffix += 1
+          }
+          const chapterId = crypto.randomUUID()
+          const scene = createScene(chapterId)
+          const document = createChapterDocument(action.text ? chapterTextToHtml(action.text) : '')
+          const chapter: Chapter = { id: chapterId, volumeId, title, ...document, updatedAt: Date.now() }
+          const sourceIndex = afterChapter ? working.chapters.findIndex((item) => item.id === afterChapter.id) : -1
+          const chapters = [...working.chapters]
+          chapters.splice(sourceIndex >= 0 ? sourceIndex + 1 : chapters.length, 0, chapter)
+          working = {
+            ...working,
+            chapters,
+            scenes: [...working.scenes, scene],
+            activeChapterId: chapterId,
+            activeSceneId: scene.id,
+          }
+          batch.undoable = false
+          applyProjectState(working)
+          results.push({
+            action, status: 'complete', changed: true, chapterTitles: [title],
+            detail: `已新建章节“${title}”${action.text ? `并写入 ${chapter.plainText.replace(/\s/g, '').length} 字` : ''}`,
+          })
+          continue
+        }
+        if (action.type === 'rename_chapter') {
+          const target = resolveChapter(action.chapterTitle)
+          if (!target) throw new Error(`没有找到章节“${action.chapterTitle}”`)
+          if (!canModifyChapter(target)) throw new Error(`当前作品未授权修改章节“${target.title}”`)
+          const nextTitle = action.newTitle.trim()
+          if (working.chapters.some((chapter) => chapter.id !== target.id && normalizedAgentName(chapter.title) === normalizedAgentName(nextTitle))) {
+            throw new Error(`章节“${nextTitle}”已经存在`)
+          }
+          const after: Chapter = { ...target, title: nextTitle, updatedAt: Date.now() }
+          await rememberChapterSnapshot(target, after)
+          working = { ...working, chapters: working.chapters.map((chapter) => chapter.id === target.id ? after : chapter) }
+          applyProjectState(working)
+          results.push({ action, status: 'complete', changed: true, chapterTitles: [nextTitle], detail: `章节“${target.title}”已改名为“${nextTitle}”` })
+          continue
+        }
+        if (action.type === 'delete_chapter') {
+          const target = resolveChapter(action.chapterTitle)
+          if (!target) throw new Error(`没有找到章节“${action.chapterTitle}”`)
+          if (!canModifyChapter(target)) throw new Error(`当前作品未授权删除章节“${target.title}”`)
+          if (working.chapters.length <= 1) throw new Error('作品至少需要保留一章')
+          const volumeTitle = working.volumes.find((volume) => volume.id === target.volumeId)?.title ?? '未命名卷'
+          await moveChapterToTrash(working.id, target, volumeTitle, working.scenes.filter((scene) => scene.chapterId === target.id))
+          await clearAttachmentScope('chapter', target.id)
+          setAttachments((current) => current.map((attachment) =>
+            attachment.scopeType === 'chapter' && attachment.scopeId === target.id
+              ? { ...attachment, scopeType: 'project', scopeId: null }
+              : attachment))
+          const index = working.chapters.findIndex((chapter) => chapter.id === target.id)
+          const chapters = working.chapters.filter((chapter) => chapter.id !== target.id)
+          const scenes = working.scenes.filter((scene) => scene.chapterId !== target.id)
+          const activeChapterId = working.activeChapterId === target.id
+            ? (chapters[Math.min(index, chapters.length - 1)]?.id ?? '')
+            : working.activeChapterId
+          const activeSceneId = scenes.some((scene) => scene.id === working.activeSceneId && scene.chapterId === activeChapterId)
+            ? working.activeSceneId
+            : (scenes.find((scene) => scene.chapterId === activeChapterId)?.id ?? '')
+          working = { ...working, chapters, scenes, activeChapterId, activeSceneId }
+          batch.undoable = false
+          applyProjectState(working)
+          setProjectMemoryBundles((current) => current.filter((bundle) => bundle.memory?.chapterId !== target.id))
+          if (memoryBundle.memory?.chapterId === target.id) setMemoryBundle({ memory: null, candidates: [] })
+          results.push({ action, status: 'complete', changed: true, chapterTitles: [target.title], detail: `章节“${target.title}”已移到回收站` })
+          continue
+        }
+        if (action.type === 'move_chapter') {
+          const target = resolveChapter(action.chapterTitle)
+          if (!target) throw new Error(`没有找到章节“${action.chapterTitle}”`)
+          if (!canModifyChapter(target)) throw new Error(`当前作品未授权移动章节“${target.title}”`)
+          const before = action.beforeChapterTitle ? resolveChapter(action.beforeChapterTitle) : null
+          const after = action.afterChapterTitle ? resolveChapter(action.afterChapterTitle) : null
+          if (action.beforeChapterTitle && !before) throw new Error(`没有找到章节“${action.beforeChapterTitle}”`)
+          if (action.afterChapterTitle && !after) throw new Error(`没有找到章节“${action.afterChapterTitle}”`)
+          const anchor = before ?? after
+          if (!anchor) throw new Error('需要说明移到哪一章之前或之后')
+          if (anchor.id === target.id) throw new Error('不能移动到它自己旁边')
+          const chapters = working.chapters.filter((chapter) => chapter.id !== target.id)
+          const anchorIndex = chapters.findIndex((chapter) => chapter.id === anchor.id)
+          if (anchorIndex < 0) throw new Error('目标章节已经不存在')
+          chapters.splice(before ? anchorIndex : anchorIndex + 1, 0, target)
+          working = { ...working, chapters }
+          applyProjectState(working)
+          results.push({
+            action, status: 'complete', changed: true, chapterTitles: [target.title],
+            detail: `章节“${target.title}”已移到“${anchor.title}”${before ? '之前' : '之后'}`,
+          })
+          continue
+        }
+        if (action.type === 'update_story_memory') {
+          const updated = await syncCharacterMemory([action.character], action.newName, action.aliases ?? [], action.removeAliases ?? [])
+          if (updated === 0) throw new Error(`没有在已确认故事记忆中找到人物“${action.character}”`)
+          results.push({
+            action, status: 'complete', changed: true,
+            detail: `人物资料“${action.character}”已更新${action.newName ? `，主名改为“${action.newName}”` : ''}${action.aliases?.length ? `，新增别名：${action.aliases.join('、')}` : ''}`,
+          })
+          continue
+        }
+        if (action.type === 'merge_characters') {
+          const bundles = await getProjectMemory(working.id)
+          const all = bundles.flatMap((bundle) => bundle.candidates)
+          const matchEntity = (name: string) => {
+            const wanted = normalizedAgentName(name)
+            const characters = all.filter((candidate) => candidate.kind === 'character')
+            const direct = characters.filter((candidate) => [candidate.title, ...(candidate.metadata.aliases ?? [])]
+              .some((known) => normalizedAgentName(known) === wanted))
+            if (direct.length > 0) return direct
+            return characters.filter((candidate) => {
+              const known = normalizedAgentName(candidate.title)
+              return known.length >= 2 && (known.includes(wanted) || wanted.includes(known))
+            })
+          }
+          const primaryMatches = matchEntity(action.primary)
+          const secondaryMatches = matchEntity(action.secondary)
+          if (primaryMatches.length === 0) throw new Error(`没有找到人物“${action.primary}”`)
+          if (secondaryMatches.length === 0) throw new Error(`没有找到人物“${action.secondary}”`)
+          const primaryEntityId = primaryMatches[0].metadata.entityId || primaryMatches[0].id
+          const secondaryEntityIds = new Set(secondaryMatches.map((candidate) => candidate.metadata.entityId || candidate.id))
+          const affected = all.filter((candidate) => {
+            const entityId = candidate.metadata.entityId || candidate.id
+            return entityId === primaryEntityId || secondaryEntityIds.has(entityId) || primaryMatches.some((item) => item.id === candidate.id)
+          })
+          const aliases = [...new Set([...affected.flatMap((candidate) => [candidate.title, ...(candidate.metadata.aliases ?? [])]), action.secondary])]
+            .filter((name) => normalizedAgentName(name) !== normalizedAgentName(action.primary))
+            .slice(0, 20)
+          const updatedAt = Date.now()
+          for (const candidate of affected) {
+            await updateMemoryCandidate({
+              ...candidate,
+              metadata: { ...candidate.metadata, entityId: primaryEntityId, aliases },
+              updatedAt,
+            })
+            rememberMemorySnapshot(candidate, updatedAt)
+          }
+          await refreshMemoryAfterEdit()
+          results.push({ action, status: 'complete', changed: true, detail: `已将“${action.secondary}”合并到“${action.primary}”，共更新 ${affected.length} 条资料证据` })
+          continue
+        }
+        if (action.type === 'set_thread_lifecycle') {
+          const bundles = await getProjectMemory(working.id)
+          const wanted = normalizedAgentName(action.thread)
+          const candidates = bundles.flatMap((bundle) => bundle.candidates)
+            .filter((candidate) => ['foreshadowing', 'commitment', 'plot', 'secret'].includes(candidate.kind))
+          const target = candidates.find((candidate) => normalizedAgentName(candidate.title) === wanted)
+            ?? candidates.find((candidate) => {
+              const known = normalizedAgentName(candidate.title)
+              return known.length >= 2 && (known.includes(wanted) || wanted.includes(known))
+            })
+          if (!target) throw new Error(`没有找到线索“${action.thread}”`)
+          const updatedAt = Date.now()
+          await updateMemoryCandidate({
+            ...target,
+            metadata: { ...target.metadata, lifecycle: action.lifecycle },
+            updatedAt,
+          })
+          rememberMemorySnapshot(target, updatedAt)
+          await refreshMemoryAfterEdit()
+          results.push({ action, status: 'complete', changed: true, detail: `线索“${target.title}”的状态已改为“${action.lifecycle}”` })
+          continue
+        }
+      } catch (error) {
+        results.push({
+          action,
+          status: 'failed',
+          detail: error instanceof Error ? error.message : '操作执行失败',
+        })
+      }
+    }
+    if (results.some((result) => result.changed)) await refreshMemoryAfterEdit()
+    const orderChanged = working.chapters.some((chapter, index) => batch.chapterOrderBefore[index] !== chapter.id)
+    if (batch.chapters.length > 0 || batch.memory.length > 0 || orderChanged || !batch.undoable) {
+      batch.summary = results
+        .filter((result) => result.status === 'complete' && result.changed)
+        .map((result) => result.detail)
+        .join('；')
+        .slice(0, 600)
+      onBatch?.(batch)
+    }
+    return results
+  }
+
+  const confirmAgentActions = async (message: AiConversationMessage, actions: AgentAppAction[]) => {
+    if (actions.length === 0 || executingAgentActionsRef.current) return
+    const turn = conversationPayload<AgentTurn>(message)
+    if (!turn?.pendingActions) return
+    executingAgentActionsRef.current = message.id
+    setExecutingActionMessageId(message.id)
+    try {
+      const batchRef: { value: AgentActionBatch | null } = { value: null }
+      const results = await executeAgentActions(actions, (value) => { batchRef.value = value })
+      const selectionNotice = results.length < turn.pendingActions.length ? `已按你勾选的 ${results.length} 项执行。\n\n` : ''
+      const reply = `${selectionNotice}${formatAgentActionReply('', results)}`
+      const changedTitles = [...new Set(results.flatMap((result) => result.chapterTitles ?? []))]
+      const actionTools: AgentToolExecution[] = results.map((result) => ({
+        id: crypto.randomUUID(),
+        name: agentActionToolName(result.action),
+        label: agentActionLabel(result.action),
+        access: result.action.type === 'open_chapter' || result.action.type === 'open_panel' ? 'navigate' : 'write',
+        status: result.status === 'complete' ? 'complete' : 'failed',
+        detail: result.detail,
+      }))
+      const updatedTurn: AgentTurn = {
+        ...turn,
+        reply,
+        pendingActions: turn.pendingActions,
+        actionStatus: 'applied',
+        actionBatch: batchRef.value ?? undefined,
+        tools: actionTools,
+        usedContext: ['程序操作', ...changedTitles],
+      }
+      const updated: AiConversationMessage = { ...message, content: reply, payloadJson: JSON.stringify(updatedTurn) }
+      await saveAiConversationMessage(updated)
+      setAgentMessages((current) => current.map((item) => item.id === updated.id ? updated : item))
+      const failedCount = results.filter((result) => result.status === 'failed').length
+      setAgentMessage(failedCount > 0
+        ? `已执行 ${results.length - failedCount} 项，${failedCount} 项未完成`
+        : `已完成 ${results.length} 项操作`)
+    } catch (error) {
+      setAgentMessage(error instanceof Error ? error.message : '操作执行失败')
+    } finally {
+      executingAgentActionsRef.current = null
+      setExecutingActionMessageId(null)
+    }
+  }
+
+  const cancelAgentActions = async (message: AiConversationMessage) => {
+    if (executingAgentActionsRef.current) return
+    const turn = conversationPayload<AgentTurn>(message)
+    if (!turn?.pendingActions) return
+    const reply = '已取消本次操作，作品没有变化。'
+    const updatedTurn: AgentTurn = {
+      ...turn,
+      reply,
+      actionStatus: 'cancelled',
+      tools: turn.tools.map((tool) => ({ ...tool, status: 'rejected' as const, detail: '作者取消了这次操作' })),
+    }
+    const updated: AiConversationMessage = { ...message, content: reply, payloadJson: JSON.stringify(updatedTurn) }
+    await saveAiConversationMessage(updated)
+    setAgentMessages((current) => current.map((item) => item.id === updated.id ? updated : item))
+    setAgentMessage('已取消，作品没有变化')
+  }
+
+  const undoAgentActionBatch = async (message: AiConversationMessage) => {
+    const turn = conversationPayload<AgentTurn>(message)
+    const batch = turn?.actionBatch
+    if (!batch || batch.status !== 'applied' || !batch.undoable || undoingBatchRef.current) return
+    const restoreParts = [
+      batch.chapters.length ? `${batch.chapters.length} 章正文/标题` : '',
+      batch.memory.length ? `${batch.memory.length} 条人物资料` : '',
+    ].filter(Boolean)
+    if (!await showConfirm(
+      `撤销这次批量修改？将恢复${restoreParts.length ? restoreParts.join('和') : '章节顺序'}。撤销前会再保存一次当前版本。`,
+      { title: '撤销批量修改', confirmLabel: '撤销' },
+    )) return
+    undoingBatchRef.current = message.id
+    setUndoingBatchMessageId(message.id)
+    try {
+      const currentProject = projectRef.current
+      const currentIds = new Set(currentProject.chapters.map((chapter) => chapter.id))
+      if (currentIds.size !== batch.chapterOrderBefore.length || batch.chapterOrderBefore.some((chapterId) => !currentIds.has(chapterId))) {
+        throw new Error('章节结构已经在这次修改后发生变化，无法一键撤销。请使用版本历史逐章恢复。')
+      }
+      const revisions = new Map<string, Revision>()
+      for (const snapshot of batch.chapters) {
+        const chapter = currentProject.chapters.find((item) => item.id === snapshot.chapterId)
+        if (!chapter || chapter.contentHash !== snapshot.afterContentHash || chapter.title !== snapshot.afterTitle) {
+          throw new Error(`章节“${chapter?.title ?? snapshot.afterTitle}”在这次修改后又被改过，无法安全撤销。请使用版本历史手动恢复。`)
+        }
+        const revision = (await listRevisions(snapshot.chapterId)).find((item) => item.id === snapshot.beforeRevisionId)
+        if (!revision) throw new Error(`章节“${chapter.title}”的修改前版本已经不存在，无法撤销。`)
+        revisions.set(snapshot.chapterId, revision)
+        await createRevision(chapter, '撤销字里助手批量修改前保存')
+      }
+      const allCandidates = (await getProjectMemory(currentProject.id)).flatMap((bundle) => bundle.candidates)
+      const candidateById = new Map(allCandidates.map((candidate) => [candidate.id, candidate]))
+      for (const snapshot of batch.memory) {
+        const current = candidateById.get(snapshot.candidate.id)
+        if (!current) throw new Error(`人物资料“${snapshot.candidate.title}”已经不存在，无法撤销。`)
+        if (current.updatedAt !== snapshot.afterUpdatedAt) {
+          throw new Error(`人物资料“${snapshot.candidate.title}”在这次修改后又被改过，无法安全撤销。`)
+        }
+      }
+      const now = Date.now()
+      setProject((current) => {
+        const chapters = current.chapters.map((chapter) => {
+          const revision = revisions.get(chapter.id)
+          return revision
+            ? {
+              ...chapter,
+              title: revision.title,
+              content: revision.content,
+              contentJson: revision.contentJson,
+              plainText: revision.plainText,
+              contentHash: revision.contentHash,
+              revisionNumber: chapter.revisionNumber + 1,
+              updatedAt: now,
+            }
+            : chapter
+        })
+        const order = new Map(batch.chapterOrderBefore.map((chapterId, index) => [chapterId, index]))
+        chapters.sort((left, right) => (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.id) ?? Number.MAX_SAFE_INTEGER))
+        const activeChapterId = chapters.some((chapter) => chapter.id === current.activeChapterId)
+          ? current.activeChapterId
+          : (chapters[0]?.id ?? '')
+        const activeSceneId = current.scenes.some((scene) => scene.id === current.activeSceneId && scene.chapterId === activeChapterId)
+          ? current.activeSceneId
+          : (current.scenes.find((scene) => scene.chapterId === activeChapterId)?.id ?? '')
+        return { ...current, chapters, activeChapterId, activeSceneId }
+      })
+      for (const snapshot of batch.memory) {
+        await updateMemoryCandidate({ ...snapshot.candidate, updatedAt: Date.now() })
+      }
+      const [memory, bundles] = await Promise.all([
+        getChapterMemory(currentProject.id, currentProject.activeChapterId),
+        getProjectMemory(currentProject.id),
+      ])
+      setMemoryBundle(memory)
+      setProjectMemoryBundles(bundles)
+      const reply = `${turn.reply}\n\n已撤销这次批量修改，作品已恢复到修改前。`
+      const updatedTurn: AgentTurn = {
+        ...turn,
+        reply,
+        actionBatch: { ...batch, status: 'undone', undoneAt: now },
+        tools: turn.tools.map((tool) => tool.access === 'write'
+          ? { ...tool, status: 'undone' as const, detail: '已撤销这次批量修改' }
+          : tool),
+      }
+      const updated: AiConversationMessage = { ...message, content: reply, payloadJson: JSON.stringify(updatedTurn) }
+      await saveAiConversationMessage(updated)
+      setAgentMessages((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setAgentMessage('已撤销本次批量修改')
+    } catch (error) {
+      await showAlert(error instanceof Error ? error.message : '撤销失败', '无法撤销')
+    } finally {
+      undoingBatchRef.current = null
+      setUndoingBatchMessageId(null)
+    }
+  }
+
+  const autoApplyDraftCandidate = async (candidate: DraftCandidate): Promise<DraftCandidate | null> => {
+    if (candidate.chapterId !== activeChapter.id) return null
+    const task = agentDraftTask(candidate)
+    const html = candidate.text.split(/\n{2,}/).map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`).join('')
+    const updatedAt = Date.now()
+    if (task.targetAction === 'new_chapter') {
+      const sourceChapter = project.chapters.find((chapter) => chapter.id === candidate.chapterId) ?? activeChapter
+      const baseTitle = task.targetChapterTitle?.trim() || nextDefaultName(project.chapters.map((chapter) => chapter.title), '章')
+      const occupiedTitles = new Set(project.chapters.map((chapter) => chapter.title))
+      let targetTitle = baseTitle
+      for (let suffix = 2; occupiedTitles.has(targetTitle); suffix += 1) targetTitle = `${baseTitle}（${suffix}）`
+      const document = createChapterDocument(html)
+      const targetId = crypto.randomUUID()
+      const scene = createScene(targetId)
+      const chapter: Chapter = { id: targetId, volumeId: sourceChapter.volumeId, title: targetTitle, ...document, updatedAt }
+      setProject((current) => {
+        const sourceIndex = current.chapters.findIndex((item) => item.id === sourceChapter.id)
+        const chapters = [...current.chapters]
+        chapters.splice(sourceIndex >= 0 ? sourceIndex + 1 : chapters.length, 0, chapter)
+        return { ...current, chapters, scenes: [...current.scenes, scene], activeChapterId: targetId, activeSceneId: scene.id }
+      })
+      const transaction = createAgentDraftTransaction({
+        action: 'create_chapter',
+        chapterId: targetId,
+        sourceChapterId: sourceChapter.id,
+        afterContentHash: document.contentHash,
+        afterTitle: targetTitle,
+        appliedAt: updatedAt,
+      })
+      const updated: DraftCandidate = {
+        ...candidate,
+        status: 'accepted',
+        taskJson: JSON.stringify({ ...task, targetChapterTitle: targetTitle, acceptedTargetChapterId: targetId, transaction }),
+        updatedAt,
+      }
+      await saveDraftCandidate(updated)
+      return updated
+    }
+    if (!editor) return null
+    const maximum = editor.state.doc.content.size
+    if (candidate.anchorFrom < 0 || candidate.anchorTo > maximum) return null
+    if (candidate.mode === 'rewrite' && editor.state.doc.textBetween(candidate.anchorFrom, candidate.anchorTo, '\n', '\n') !== candidate.sourceText) return null
+    const checkpoint = await createRevision(activeChapter, '字里助手自动写入前保存') ?? (await listRevisions(activeChapter.id))[0] ?? null
+    const inserted = editor.chain().insertContentAt({ from: candidate.anchorFrom, to: candidate.anchorTo }, html).run()
+    if (!inserted) return null
+    const transaction = createAgentDraftTransaction({
+      action: 'insert',
+      chapterId: activeChapter.id,
+      beforeRevisionId: checkpoint?.id,
+      afterContentHash: hashDocument(editor.getJSON() as DocumentNode),
+      afterTitle: activeChapter.title,
+      appliedAt: updatedAt,
+    })
+    const updated: DraftCandidate = {
+      ...candidate,
+      status: 'accepted',
+      taskJson: JSON.stringify({ ...task, transaction }),
+      updatedAt,
+    }
+    await saveDraftCandidate(updated)
+    return updated
   }
 
   const runAgentConversation = async (requestOverride?: string) => {
@@ -2289,6 +3300,111 @@ function App() {
         setAgentImages([])
       }
       const existingMemoryForMutation = await getProjectMemory(project.id)
+      if (aiDataPermissions.agentControl && requestMayNeedAgentActions(request)) {
+        setAgentTaskPhase('generation')
+        setAgentMessage('正在理解你的要求并准备执行')
+        const latestProject = projectRef.current
+        const plannerProject = {
+          ...latestProject,
+          chapters: latestProject.chapters.filter((item) => item.id === activeChapter.id
+            ? aiDataPermissions.currentChapter
+            : aiDataPermissions.otherChapters),
+        }
+        const plannerChapter = plannerProject.chapters.find((item) => item.id === plannerProject.activeChapterId)
+          ?? plannerProject.chapters[0]
+          ?? activeChapter
+        let plan: Awaited<ReturnType<typeof planAgentActions>> | null = null
+        try {
+          plan = await planAgentActions(
+            aiSettings,
+            aiApiKey,
+            plannerProject,
+            plannerChapter,
+            activeScene,
+            aiDataPermissions.confirmedMemory ? permittedMemories(existingMemoryForMutation) : [],
+            request,
+            [...historyMessages, userMessage],
+            controller.signal,
+            agentSelection.text,
+          )
+        } catch (error) {
+          if (controller.signal.aborted) throw error
+          plan = null
+        }
+        if (agentController.current !== controller) return
+        if (plan && plan.actions.length > 0) {
+          const navigationOnly = plan.actions.every((action) => action.type === 'open_chapter' || action.type === 'open_panel')
+          setAgentTaskPhase('validation')
+          let actionResults: AgentActionResult[] = []
+          if (navigationOnly) {
+            setAgentMessage('正在打开…')
+            actionResults = await executeAgentActions(plan.actions)
+            if (agentController.current !== controller) return
+          } else {
+            setAgentMessage('已整理好操作，等待你确认')
+          }
+          const actionTools: AgentToolExecution[] = navigationOnly
+            ? actionResults.map((result) => ({
+              id: crypto.randomUUID(),
+              name: agentActionToolName(result.action),
+              label: agentActionLabel(result.action),
+              access: result.action.type === 'open_chapter' || result.action.type === 'open_panel' ? 'navigate' : 'write',
+              status: result.status === 'complete' ? 'complete' : 'failed',
+              detail: result.detail,
+            }))
+            : plan.actions.map((action) => ({
+              id: crypto.randomUUID(),
+              name: agentActionToolName(action),
+              label: agentActionLabel(action),
+              access: action.type === 'open_chapter' || action.type === 'open_panel' ? 'navigate' : 'write',
+              status: 'awaiting-confirmation',
+              detail: describeAgentAction(action),
+            }))
+          const reply = navigationOnly
+            ? formatAgentActionReply('', actionResults)
+            : `${plan.note.trim() ? `${plan.note.trim()}\n\n` : ''}我准备执行以下 ${plan.actions.length} 项操作。请确认后我再修改作品：\n${plan.actions.map((action, index) => `${index + 1}. ${describeAgentAction(action)}`).join('\n')}`
+          const actionPreviews = plan.actions.map((action) => previewAgentAction(
+            action,
+            latestProject,
+            (chapterId) => chapterId === activeChapter.id ? aiDataPermissions.currentChapter : aiDataPermissions.otherChapters,
+          ))
+          const completedTurn: AgentTurn = {
+            reply,
+            reasoning: plan.reasoning,
+            citations: [],
+            drafts: [],
+            usedContext: navigationOnly ? ['程序操作'] : ['待确认操作'],
+            imageNames: [],
+            retrieval: {
+              scope: 'project',
+              scopeLabel: navigationOnly ? '程序操作' : '等待确认的程序操作',
+              totalChapters: project.chapters.length,
+              searchedChapters: project.chapters.length,
+              selectedChapters: [],
+              memoryItems: existingMemoryForMutation.flatMap((bundle) => bundle.candidates).filter((candidate) => candidate.status === 'confirmed').length,
+              evidenceCount: 0,
+              summaryLevels: navigationOnly ? ['本地程序操作'] : ['操作确认卡'],
+            },
+            tools: actionTools,
+            pendingActions: navigationOnly ? undefined : plan.actions,
+            actionPreviews: navigationOnly ? undefined : actionPreviews,
+            actionNote: plan.note,
+            actionStatus: navigationOnly ? 'applied' : 'pending',
+          }
+          const completed: AiConversationMessage = { ...pendingMessage, content: reply, payloadJson: JSON.stringify(completedTurn), status: 'complete' }
+          await saveAiConversationMessage(completed)
+          const updatedConversation = { ...conversation, updatedAt: Date.now() }
+          setAgentConversation(updatedConversation)
+          setAgentConversations((current) => [updatedConversation, ...current.filter((item) => item.id !== updatedConversation.id)].sort((left, right) => right.updatedAt - left.updatedAt))
+          setAgentMessages((current) => current.map((message) => message.id === completed.id ? completed : message))
+          setAgentInput('')
+          setAgentImages([])
+          setAgentTaskPhase('complete')
+          setAgentMessage(navigationOnly ? `已打开 ${actionResults.length} 项` : `已准备 ${plan.actions.length} 项操作，等待你确认`)
+          finishAiTask(taskId, 'completed', navigationOnly ? `已打开 ${actionResults.length} 项` : `已生成 ${plan.actions.length} 项操作确认卡，等待作者确认`)
+          return
+        }
+      }
       const memoryMutationPreview = buildAgentMemoryMutationPreviews(project, existingMemoryForMutation, request)
       if (memoryMutationPreview.error) throw new Error(memoryMutationPreview.error)
       if (memoryMutationPreview.mutations.length > 0) {
@@ -2517,17 +3633,42 @@ function App() {
         externalSources,
       )
       if (agentController.current !== controller) return
+      if (aiDataPermissions.agentControl) turn.reply = appendAgentControlHint(turn.reply)
       setAgentTaskPhase('validation')
       for (const candidate of turn.drafts) await saveDraftCandidate(candidate)
-      if (turn.drafts.length) {
-        setDraftCandidates((current) => [...turn.drafts, ...current.filter((item) => !turn.drafts.some((draft) => draft.id === item.id))])
-        setPreviewDraftId(turn.drafts[0].id)
+      const autoApplied: DraftCandidate[] = []
+      if (aiDataPermissions.agentAutoApply && turn.drafts.length > 0) {
+        setAgentMessage('正在把生成的正文直接写入作品')
+        const applied = await autoApplyDraftCandidate(turn.drafts[0])
+        if (applied) autoApplied.push(applied)
+        if (agentController.current !== controller) return
+      }
+      const finalizedDrafts = turn.drafts.map((candidate) => autoApplied.find((item) => item.id === candidate.id) ?? candidate)
+      if (finalizedDrafts.length) {
+        setDraftCandidates((current) => [...finalizedDrafts, ...current.filter((item) => !finalizedDrafts.some((draft) => draft.id === item.id))])
+        if (autoApplied.length === 0) setPreviewDraftId(finalizedDrafts[0].id)
       }
       const navigationTools = await executeAgentNavigationTools(request)
       const batchNotice = batchResult
         ? `批量故事记忆分析已完成 ${batchResult.analyzedCount} 章，整理出 ${batchResult.candidateCount} 条资料${batchResult.emptyChapters.length ? `；其中 ${batchResult.emptyChapters.length} 章经二次提取仍无可靠候选` : ''}${batchResult.failures.length ? `；${batchResult.failures.length} 章失败` : ''}。\n\n`
         : ''
-      const completedTurn: AgentTurn = { ...turn, reply: `${batchNotice}${turn.reply}`, tools: [...(turn.tools ?? []), ...programTools, ...navigationTools] }
+      const autoApplyNotice = autoApplied.length > 0
+        ? `已按你的要求把候选正文直接写入正文，并自动保存了修改前的版本。\n\n`
+        : (aiDataPermissions.agentAutoApply && finalizedDrafts.length > 0
+          ? '自动写入没有成功（光标位置或原选区可能已经变化），候选正文已保留，请预览后确认。\n\n'
+          : '')
+      const completedTurn: AgentTurn = {
+        ...turn,
+        drafts: finalizedDrafts,
+        reply: `${batchNotice}${autoApplyNotice}${turn.reply}`,
+        tools: [
+          ...(turn.tools ?? []).map((tool) => tool.name === 'preview_editor_change' && autoApplied.length > 0
+            ? { ...tool, status: 'complete' as const, detail: '已自动写入正文，可在版本历史中回退' }
+            : tool),
+          ...programTools,
+          ...navigationTools,
+        ],
+      }
       const completed: AiConversationMessage = { ...pendingMessage, content: completedTurn.reply, payloadJson: JSON.stringify(completedTurn), status: 'complete' }
       await saveAiConversationMessage(completed)
       const updatedConversation = { ...conversation, updatedAt: Date.now() }
@@ -2536,9 +3677,11 @@ function App() {
       setAgentMessages((current) => current.map((message) => message.id === completed.id ? completed : message))
       setAgentInput('')
       setAgentImages([])
-      setAgentMessage(turn.drafts.length ? `已生成 ${turn.drafts.length} 个待确认候选，请预览后确认是否插入正文` : turn.citations.length ? `引用了 ${turn.citations.length} 处原文` : '')
+      setAgentMessage(finalizedDrafts.length
+        ? (autoApplied.length > 0 ? '候选正文已直接写入作品' : `已生成 ${finalizedDrafts.length} 个待确认候选，请预览后确认是否插入正文`)
+        : turn.citations.length ? `引用了 ${turn.citations.length} 处原文` : '')
       setAgentTaskPhase('complete')
-      finishAiTask(taskId, 'completed', turn.drafts.length ? `生成 ${turn.drafts.length} 个待确认候选，等待确认插入正文` : turn.citations.length ? `完成回复并引用 ${turn.citations.length} 处原文` : '回复已完成')
+      finishAiTask(taskId, 'completed', autoApplied.length > 0 ? '候选正文已自动写入并保存版本' : finalizedDrafts.length ? `生成 ${finalizedDrafts.length} 个待确认候选，等待确认插入正文` : turn.citations.length ? `完成回复并引用 ${turn.citations.length} 处原文` : '回复已完成')
     } catch (error) {
       if (agentController.current !== controller) return
       const errorMessage = error instanceof Error ? error.message : 'Agent 请求失败'
@@ -2804,7 +3947,35 @@ function App() {
     await saveOutlineNode(node)
     setCreativeWorkspace((current) => ({ ...current, outline: [...current.outline, node] }))
     setAdvisorMessage('方向已作为可编辑场景节点写入大纲')
+    setOutlineCoverage(null)
   }
+
+  const runOutlineCoverage = (linksOverride?: OutlineChapterLink[]) => {
+    const report = analyzeOutlineCoverage(creativeWorkspace.outline, project.chapters, linksOverride ?? outlineLinks)
+    setOutlineCoverage(report)
+    setAdvisorMessage(report.total === 0
+      ? '还没有章节/场景层的大纲节点，无法检测覆盖度。'
+      : `大纲覆盖度：已覆盖 ${report.covered}（其中显式绑定 ${report.linked}），部分覆盖 ${report.partial}，未覆盖 ${report.missing}`)
+  }
+
+  const bindOutlineNodeChapter = async (nodeId: string, chapterId: string): Promise<OutlineChapterLink[] | null> => {
+    const nextIds = chapterId ? [chapterId] : []
+    const nextLinks: OutlineChapterLink[] = [
+      ...outlineLinks.filter((link) => link.nodeId !== nodeId),
+      ...nextIds.map((id) => ({ projectId: project.id, nodeId, chapterId: id, createdAt: Date.now() })),
+    ]
+    try {
+      await setOutlineNodeLinks(project.id, nodeId, nextIds)
+      setOutlineLinks(nextLinks)
+      setOutlineCoverage(null)
+      return nextLinks
+    } catch (error) {
+      await showAlert(error instanceof Error ? error.message : '绑定章节失败', '绑定失败')
+      return null
+    }
+  }
+
+  const linkedChapterIdFor = (nodeId: string) => outlineLinks.find((link) => link.nodeId === nodeId)?.chapterId ?? ''
 
   const openDraftAssistant = async () => {
     const selection = editor?.state.selection
@@ -2852,6 +4023,9 @@ function App() {
         noNewFacts: draftNoNewFacts,
         styleInstruction: draftStyleInstruction,
         selectedText: draftTarget.text,
+        pov: draftPov,
+        endingBeat: draftEndingBeat,
+        withhold: draftWithhold,
       }
       const candidates = await generateDraftCandidates(
         aiSettings,
@@ -2942,13 +4116,6 @@ function App() {
       const occupiedTitles = new Set(project.chapters.filter((chapter) => chapter.id !== existingTarget?.id).map((chapter) => chapter.title))
       let targetTitle = baseTitle
       for (let suffix = 2; occupiedTitles.has(targetTitle); suffix += 1) targetTitle = `${baseTitle}（${suffix}）`
-      const confirmed = await showConfirm(
-        existingTarget
-          ? `将使用“${candidate.title}”完整恢复章节“${existingTarget.title}”？恢复前会自动保存版本。`
-          : `将在“${sourceChapter.title}”之后新建章节“${targetTitle}”，并写入“${candidate.title}”？`,
-        { title: existingTarget ? '重新写入候选文本' : '新建章节并写入', confirmLabel: existingTarget ? '恢复章节内容' : '新建并写入' },
-      )
-      if (!confirmed) return
       setAcceptingDraftId(candidate.id)
       reportDraftAction(existingTarget ? '正在保存版本并恢复章节内容…' : '正在新建章节并写入候选稿…')
       try {
@@ -3036,11 +4203,6 @@ function App() {
         return
       }
     }
-    const confirmed = await showConfirm(
-      reapply ? `将在当前光标或选区重新写入“${candidate.title}”的完整内容。已有残留内容不会自动识别，请确认写入位置。` : `将“${candidate.title}”写入当前正文？接受前会自动保存版本。`,
-      { title: reapply ? '重新写入候选文本' : '接受候选文本', confirmLabel: reapply ? '重新写入' : '写入正文' },
-    )
-    if (!confirmed) return
     setAcceptingDraftId(candidate.id)
     reportDraftAction('正在保存版本并写入正文…')
     let inserted = false
@@ -3311,6 +4473,25 @@ function App() {
     setReviewMessage(status === 'confirmed' ? '问题已确认' : status === 'resolved' ? '问题已标记为已处理' : status === 'dismissed' ? '问题已忽略' : '问题已重新打开')
   }
 
+  const rewriteReviewIssue = async (issue: ReviewIssue) => {
+    const evidence = issue.evidence[0]
+    if (!evidence) {
+      await showAlert('这条问题没有可定位的原文证据，无法直接改写。', '无法改写')
+      return
+    }
+    if (!project.chapters.some((chapter) => chapter.id === evidence.chapterId)) {
+      await showAlert('这条问题对应的章节已经不存在。', '无法改写')
+      return
+    }
+    setPendingReviewRewrite({
+      chapterId: evidence.chapterId,
+      nodeId: evidence.nodeId,
+      suggestion: issue.suggestion || '',
+      detail: issue.detail,
+    })
+    if (evidence.chapterId !== activeChapter.id) await openChapter(evidence.chapterId)
+  }
+
   const reviewIssueIsStale = (issue: ReviewIssue) => {
     if (!issue.contentHash) return false
     if (issue.chapterId) return project.chapters.find((chapter) => chapter.id === issue.chapterId)?.contentHash !== issue.contentHash
@@ -3361,6 +4542,7 @@ function App() {
     if (kind === 'attachments') setAttachmentsOpen(open)
     if (kind === 'references') setReferencesOpen(open)
     if (kind === 'naming') setNamingOpen(open)
+    if (kind === 'search') setGlobalSearchOpen(open)
   }
 
   const closeUtilityPanel = async (kind: UtilityPanelKind) => {
@@ -3694,6 +4876,38 @@ function App() {
   }, [activeChapter.id, activeChapter.content, activeChapter.contentHash, activeDraftPreview, activeDraftPreviewTask.targetAction, editor])
 
   useEffect(() => {
+    if (!pendingReviewRewrite || !editor) return
+    if (activeChapter.id !== pendingReviewRewrite.chapterId) return
+    const range = editorNodeRange(editor, pendingReviewRewrite.nodeId, pendingReviewRewrite.nodeId)
+    setPendingReviewRewrite(null)
+    if (!range) {
+      void showAlert('无法在正文中定位这条问题的原文段落。', '无法改写')
+      return
+    }
+    editor.chain().focus().setTextSelection(range).run()
+    const selectedText = editor.state.doc.textBetween(range.from, range.to, '\n', '\n')
+    void openDraftAssistant()
+    setDraftMode('rewrite')
+    setDraftTargetLength(Math.max(120, Math.min(3000, Math.round(selectedText.replace(/\s/g, '').length * 1.05))))
+    const avoidance = aiDataPermissions.styleProfile
+      ? [...(styleProfile.bannedPhrases ?? []), ...(styleProfile.bannedPatterns ?? [])].slice(0, 24)
+      : []
+    setDraftStyleInstruction(`去 AI 腔改写：保留原意、事实和人物语气；${pendingReviewRewrite.suggestion || pendingReviewRewrite.detail}`.slice(0, 900))
+    setDraftMustAvoid(`${avoidance.length ? `不要出现这些套话或写法：${avoidance.join('、')}。\n` : ''}不要用解释替代动作，不要写段尾总结。`)
+    setAssistantView('draft')
+    setAssistantOpen(true)
+    setPendingDraftGenerate(true)
+  }, [activeChapter.id, editor, pendingReviewRewrite, styleProfile.bannedPatterns, styleProfile.bannedPhrases])
+
+  useEffect(() => {
+    if (!pendingDraftGenerate) return
+    if (!assistantOpen || assistantView !== 'draft' || draftBusy) return
+    setPendingDraftGenerate(false)
+    const timer = window.setTimeout(() => { void runDraftGeneration() }, 80)
+    return () => window.clearTimeout(timer)
+  }, [assistantOpen, assistantView, draftBusy, pendingDraftGenerate])
+
+  useEffect(() => {
     if (!activeDraftPreview || activeDraftPreview.status !== 'candidate') return
     const frame = window.requestAnimationFrame(() => {
       document.querySelector<HTMLElement>(`[data-draft-preview-id="${activeDraftPreview.id}"]`)?.scrollIntoView({
@@ -3754,19 +4968,151 @@ function App() {
 
   useEffect(() => {
     if (projectBackupTimer.current) window.clearTimeout(projectBackupTimer.current)
-    if (!hydrated || !project.id || !isTauri() || !preferences.projectSavePath.trim()) return
-    projectBackupTimer.current = window.setTimeout(() => {
-      if (projectBackupBusy.current) return
-      projectBackupBusy.current = true
-      void exportBackup(true).finally(() => {
-        projectBackupBusy.current = false
-      })
-    }, 3000)
+    projectBackupTimer.current = null
+    const path = preferences.projectSavePath.trim()
+    if (!hydrated || !projectRef.current.id || !isTauri() || !path) return
+    if (!preferences.autoBackupEnabled) return
+    const intervalMinutes = Math.max(1, Math.min(720, Math.round(preferences.autoBackupIntervalMinutes) || 10))
+    const schedule = () => {
+      projectBackupTimer.current = window.setTimeout(() => {
+        if (projectBackupBusy.current) {
+          // 上次备份还在进行中：推迟到下个周期再试，避免并发写文件。
+          schedule()
+          return
+        }
+        projectBackupBusy.current = true
+        void (autoBackupRunner.current?.() ?? Promise.resolve()).finally(() => {
+          projectBackupBusy.current = false
+          schedule()
+        })
+      }, intervalMinutes * 60 * 1000)
+    }
+    schedule()
     return () => {
       if (projectBackupTimer.current) window.clearTimeout(projectBackupTimer.current)
       projectBackupTimer.current = null
     }
-  }, [hydrated, preferences.projectSavePath, project])
+  }, [hydrated, preferences.projectSavePath, preferences.autoBackupEnabled, preferences.autoBackupIntervalMinutes])
+
+  const flushWritingSession = async (draft: WritingSessionDraft | null) => {
+    if (!draft) return
+    if (draft.wordsAdded === draft.persistedAdded && draft.wordsRemoved === draft.persistedRemoved && draft.activeMs === draft.persistedActiveMs) return
+    draft.persistedAdded = draft.wordsAdded
+    draft.persistedRemoved = draft.wordsRemoved
+    draft.persistedActiveMs = draft.activeMs
+    const session: WritingSession = {
+      id: draft.id,
+      projectId: draft.projectId,
+      chapterId: draft.chapterId,
+      startedAt: draft.startedAt,
+      endedAt: draft.lastActivityAt,
+      wordsAdded: draft.wordsAdded,
+      wordsRemoved: draft.wordsRemoved,
+      activeMs: draft.activeMs,
+    }
+    try {
+      await upsertWritingSession(session)
+    } catch {
+      // 统计写入失败不影响正文保存，下次增量时重试。
+    }
+  }
+
+  // 写作统计采集：按章累积正文字数增量，30 分钟无操作视为新会话。
+  useEffect(() => {
+    if (!hydrated) return
+    const now = Date.now()
+    const chapterId = activeChapter.id
+    const length = chapterWordCount(activeChapter)
+    const draft = writingSessionRef.current
+    if (!draft || draft.projectId !== project.id || draft.chapterId !== chapterId || now - draft.lastActivityAt > 30 * 60 * 1000) {
+      void flushWritingSession(draft)
+      writingSessionRef.current = {
+        id: crypto.randomUUID(),
+        projectId: project.id,
+        chapterId,
+        startedAt: now,
+        lastActivityAt: now,
+        lastLength: length,
+        wordsAdded: 0,
+        wordsRemoved: 0,
+        activeMs: 0,
+        persistedAt: 0,
+        persistedAdded: 0,
+        persistedRemoved: 0,
+        persistedActiveMs: 0,
+      }
+      return
+    }
+    const delta = length - draft.lastLength
+    if (delta === 0) return
+    if (delta > 0) draft.wordsAdded += delta
+    else draft.wordsRemoved -= delta
+    draft.activeMs += Math.min(Math.max(0, now - draft.lastActivityAt), 120_000)
+    draft.lastActivityAt = now
+    draft.lastLength = length
+    if (now - draft.persistedAt >= 15_000) {
+      draft.persistedAt = now
+      void flushWritingSession(draft)
+    }
+  }, [hydrated, project.id, activeChapter])
+
+  useEffect(() => {
+    const handler = () => { void flushWritingSession(writingSessionRef.current) }
+    window.addEventListener('beforeunload', handler)
+    return () => {
+      window.removeEventListener('beforeunload', handler)
+      void flushWritingSession(writingSessionRef.current)
+    }
+  }, [])
+
+  // 大纲节点与章节的显式绑定：切换作品时重新读取，章节被删后自动忽略失效绑定。
+  useEffect(() => {
+    if (!hydrated) return
+    let cancelled = false
+    void listOutlineLinks(project.id)
+      .then((links) => { if (!cancelled) setOutlineLinks(links) })
+      .catch(() => { if (!cancelled) setOutlineLinks([]) })
+    return () => { cancelled = true }
+  }, [hydrated, project.id])
+
+  useEffect(() => {
+    const valid = new Set(project.chapters.map((chapter) => chapter.id))
+    setOutlineLinks((previous) => {
+      if (!previous.some((link) => !valid.has(link.chapterId))) return previous
+      return previous.filter((link) => valid.has(link.chapterId))
+    })
+  }, [project.chapters])
+
+  useEffect(() => {
+    commandRunnerRef.current = {
+      palette: () => setCommandPaletteOpen(true),
+      search: () => { if (globalSearchOpen) void closeUtilityPanel('search'); else openSearch() },
+      focus: () => setFocusMode((value) => !value),
+      backup: () => { void exportBackup(false) },
+      stats: () => openWritingStats(),
+      compliance: () => openCompliance(),
+    }
+  })
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
+      const target = event.target instanceof Element ? event.target : null
+      const inField = Boolean(target?.closest('input, textarea, select, [contenteditable="true"]'))
+      for (const [id, combo] of Object.entries(preferences.keymap)) {
+        if (!shortcutMatches(event, combo)) continue
+        // 面板快捷键在输入时也生效；其它快捷键避免打断输入。
+        if (inField && id !== 'palette') continue
+        const runner = commandRunnerRef.current[id]
+        if (!runner) continue
+        event.preventDefault()
+        runner()
+        return
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [preferences.keymap])
 
   useEffect(() => {
     if (aiPermissionState.projectId !== project.id) {
@@ -4094,6 +5440,15 @@ function App() {
   }, [activeChapter.id, activeScene?.id, assistantOpen, assistantView, hydrated, project.id])
 
   useEffect(() => {
+    if (!hydrated || !project.id) return
+    let cancelled = false
+    void loadStyleProfile(project.id)
+      .then((profile) => { if (!cancelled) setStyleProfile(profile) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [hydrated, project.id])
+
+  useEffect(() => {
     if (!hydrated) return
     let cancelled = false
     void listReviewIssues(project.id).then((issues) => {
@@ -4144,13 +5499,25 @@ function App() {
 
   useEffect(() => {
     if (!hydrated || !project.id || !preferences.automaticChecksEnabled) return
+    let cancelled = false
     const timer = window.setTimeout(() => {
-      const issues = runAutomaticChecks(project.id, activeChapter)
-      void replaceReviewIssues(project.id, activeChapter.id, 'automatic', issues).then(async () => {
-        setReviewIssues(await listReviewIssues(project.id))
-      }).catch(() => undefined)
+      void (async () => {
+        try {
+          const profile = await loadStyleProfile(project.id)
+          if (cancelled) return
+          const issues = runAutomaticChecks(project.id, activeChapter, profile)
+          await replaceReviewIssues(project.id, activeChapter.id, 'automatic', issues)
+          if (cancelled) return
+          setReviewIssues(await listReviewIssues(project.id))
+        } catch {
+          // 自动检查失败不阻塞写作；下一轮正文变化会重试。
+        }
+      })()
     }, 1800)
-    return () => window.clearTimeout(timer)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
   }, [activeChapter.contentHash, activeChapter.id, hydrated, preferences.automaticChecksEnabled, project.id])
 
   useEffect(() => {
@@ -4269,6 +5636,32 @@ function App() {
   }, [activeChapter.id, citationTarget, editor])
 
   useEffect(() => {
+    if (!searchJumpTarget || searchJumpTarget.chapterId !== activeChapter.id) return
+    const timer = window.setTimeout(() => {
+      const needle = searchJumpTarget.needle
+      const findSelectionStart = (target: string): { start: number; length: number } | null => {
+        let found: { start: number; length: number } | null = null
+        editor?.state.doc.descendants((node, position) => {
+          if (found !== null || !node.isBlock) return false
+          const quoteOffset = node.textContent.indexOf(target)
+          if (quoteOffset < 0) return true
+          found = { start: position + 1 + quoteOffset, length: target.length }
+          return false
+        })
+        return found
+      }
+      const located = findSelectionStart(needle) ?? (needle.length > 40 ? findSelectionStart(needle.slice(0, 40)) : null)
+      if (located && editor && !editor.isDestroyed) {
+        const selectionEnd = Math.min(editor.state.doc.content.size, located.start + located.length)
+        editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, located.start, selectionEnd)).scrollIntoView())
+        editor.view.focus()
+      }
+      setSearchJumpTarget(null)
+    }, 100)
+    return () => window.clearTimeout(timer)
+  }, [activeChapter.id, editor, searchJumpTarget])
+
+  useEffect(() => {
     localStorage.setItem('zili-writing-focus-mode-v1', String(focusMode))
   }, [focusMode])
 
@@ -4302,6 +5695,22 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // 桌面软件行为：拦截 WebView 自带的浏览器快捷键（刷新 / 页面查找 / 打印 / 缩放 / 前进后退历史）。
+      // 应用自己的快捷键（Ctrl+F、Ctrl+H、Ctrl+Shift+A/I、F11 等）在下面单独处理。
+      const plainKey = event.key
+      const keyLower = plainKey.toLowerCase()
+      const withCtrl = event.ctrlKey || event.metaKey
+      const inEditable = event.target instanceof Element && Boolean(event.target.closest('input, textarea, [contenteditable="true"]'))
+      const browserShortcut =
+        plainKey === 'F3' || plainKey === 'F5' || plainKey === 'F7' ||
+        (withCtrl && (keyLower === 'r' || keyLower === 'p' || keyLower === 'j' || keyLower === 'o' || (keyLower === 'u' && !inEditable))) ||
+        (withCtrl && (plainKey === '=' || plainKey === '+' || plainKey === '-' || plainKey === '0')) ||
+        (event.altKey && !inEditable && (plainKey === 'ArrowLeft' || plainKey === 'ArrowRight'))
+      if (browserShortcut) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
       if (event.key === 'Escape') {
         if (appDialog) void resolveAppDialog(false)
         else if (newProjectDialogOpen) void closeModal('newProject')
@@ -4318,11 +5727,8 @@ function App() {
         else if (attachmentsOpen) void closeUtilityPanel('attachments')
         else if (referencesOpen) void closeUtilityPanel('references')
         else if (namingOpen) void closeUtilityPanel('naming')
+        else if (globalSearchOpen) void closeUtilityPanel('search')
         else if (focusMode) setFocusMode(false)
-      }
-      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'f') {
-        event.preventDefault()
-        setFocusMode((value) => !value)
       }
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'a') {
         event.preventDefault()
@@ -4340,10 +5746,21 @@ function App() {
         setAgentMessage('')
         setAssistantOpen(true)
       }
-      if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
-        event.preventDefault()
-        setFindOpen(true)
-        window.setTimeout(() => findInput.current?.focus(), 0)
+      const shortcutKey = event.key.toLowerCase()
+      if (!event.shiftKey && (event.ctrlKey || event.metaKey) && (shortcutKey === 'f' || shortcutKey === 'h')) {
+        const target = event.target instanceof Element ? event.target : null
+        const inEditor = Boolean(target?.closest('.tiptap'))
+        const inFindPanel = Boolean(target?.closest('.find-panel'))
+        const inField = Boolean(target?.closest('input, textarea, select, [contenteditable="true"]'))
+        if (!inField || inEditor || inFindPanel) {
+          event.preventDefault()
+          const selected = editor && !editor.state.selection.empty
+            ? editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, '\n').trim().slice(0, 80)
+            : ''
+          if (selected && !findOpen) setFindQuery(selected)
+          setFindOpen(true)
+          window.setTimeout(() => (shortcutKey === 'h' ? replaceInput.current : findInput.current)?.focus(), 0)
+        }
       }
       if (event.key === 'F11') {
         event.preventDefault()
@@ -4352,7 +5769,25 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [appDialog, assetsOpen, assistantOpen, attachmentsOpen, contextMenu, findOpen, focusMode, fullscreen, historyOpen, libraryOpen, newProjectDialogOpen, referencesOpen, rewardOpen, settingsOpen, sidebarToolsOpen, trashOpen])
+  }, [appDialog, assetsOpen, assistantOpen, attachmentsOpen, contextMenu, editor, findOpen, focusMode, fullscreen, globalSearchOpen, historyOpen, libraryOpen, newProjectDialogOpen, referencesOpen, rewardOpen, settingsOpen, sidebarToolsOpen, trashOpen])
+
+  // 桌面软件行为：禁止 Ctrl+滚轮缩放页面，禁止把文件拖进窗口时被 WebView 当作导航打开。
+  useEffect(() => {
+    const blockZoom = (event: WheelEvent) => {
+      if (event.ctrlKey) event.preventDefault()
+    }
+    const blockDropNavigation = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+    }
+    window.addEventListener('wheel', blockZoom, { passive: false })
+    window.addEventListener('dragover', blockDropNavigation)
+    window.addEventListener('drop', blockDropNavigation)
+    return () => {
+      window.removeEventListener('wheel', blockZoom)
+      window.removeEventListener('dragover', blockDropNavigation)
+      window.removeEventListener('drop', blockDropNavigation)
+    }
+  }, [])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -4487,9 +5922,16 @@ function App() {
         : right.updatedAt - left.updatedAt)
   }, [liveProjectMemoryBundles, memoryScope, memorySearch, project.chapters])
 
-  const characterMemoryProfiles = useMemo(() => buildCharacterMemoryProfiles(project, liveProjectMemoryBundles)
-    .filter((profile) => `${profile.name} ${profile.aliases.join(' ')} ${profile.facts.map((fact) => `${fact.category} ${fact.value}`).join(' ')} ${profile.states.map((state) => `${state.aspect} ${state.value}`).join(' ')} ${profile.relationships.map((relationship) => `${relationship.title} ${relationship.counterparts.join(' ')} ${relationship.value}`).join(' ')} ${profile.timeline.map((state) => `${state.aspect} ${state.previousValue} ${state.value}`).join(' ')}`.toLowerCase().includes(memorySearch.trim().toLowerCase())), [liveProjectMemoryBundles, memorySearch, project])
+  const allCharacterMemoryProfiles = useMemo(() => buildCharacterMemoryProfiles(project, liveProjectMemoryBundles), [liveProjectMemoryBundles, project])
+  const characterMemoryProfiles = useMemo(() => allCharacterMemoryProfiles
+    .filter((profile) => `${profile.name} ${profile.aliases.join(' ')} ${profile.facts.map((fact) => `${fact.category} ${fact.value}`).join(' ')} ${profile.states.map((state) => `${state.aspect} ${state.value}`).join(' ')} ${profile.relationships.map((relationship) => `${relationship.title} ${relationship.counterparts.join(' ')} ${relationship.value}`).join(' ')} ${profile.timeline.map((state) => `${state.aspect} ${state.previousValue} ${state.value}`).join(' ')}`.toLowerCase().includes(memorySearch.trim().toLowerCase())), [allCharacterMemoryProfiles, memorySearch])
   const selectedCharacterProfile = characterMemoryProfiles.find((profile) => profile.id === selectedCharacterProfileId) ?? characterMemoryProfiles[0] ?? null
+
+  const effectiveRelationshipScope = useMemo<RelationshipGraphScope>(() => {
+    if (relationshipScope.mode === 'untilChapter') return { mode: 'untilChapter', chapterId: relationshipScope.chapterId || activeChapter.id }
+    if (relationshipScope.mode === 'volume') return { mode: 'volume', volumeId: relationshipScope.volumeId || activeChapter.volumeId }
+    return relationshipScope
+  }, [relationshipScope, activeChapter.id, activeChapter.volumeId])
 
   const storyMemoryThreads = useMemo(() => buildStoryThreads(project, liveProjectMemoryBundles)
     .filter((thread) => memoryThreadLifecycle === 'all' || thread.lifecycle === memoryThreadLifecycle)
@@ -4901,8 +6343,12 @@ function App() {
   }
 
   useEffect(() => {
+    if (!findOpen) {
+      setFindCount(0)
+      return
+    }
     setFindCount(collectMatches().length)
-  }, [activeChapter.content, findQuery])
+  }, [activeChapter.content, findOpen, findQuery])
 
   const findNext = () => {
     if (!editor) return
@@ -4922,7 +6368,7 @@ function App() {
       findNext()
       return
     }
-    editor.chain().focus().insertContent(replaceText).run()
+    editor.chain().focus().insertContent({ type: 'text', text: replaceText }).run()
     findNext()
   }
 
@@ -4940,6 +6386,57 @@ function App() {
 
   const writeClipboard = (text: string) => isTauri() ? writeClipboardText(text) : navigator.clipboard.writeText(text)
   const readClipboard = () => isTauri() ? readClipboardText() : navigator.clipboard.readText()
+
+  const stopTts = () => {
+    if (typeof window.speechSynthesis === 'undefined') return
+    window.speechSynthesis.cancel()
+    setTtsSpeaking(false)
+    setTtsPaused(false)
+  }
+
+  const speakTts = (scope: 'chapter' | 'selection') => {
+    if (typeof window.speechSynthesis === 'undefined') {
+      void showAlert('当前环境不支持语音朗读（缺少 speechSynthesis）。', '朗读不可用')
+      return
+    }
+    if (ttsSpeaking) {
+      // 朗读中单击只做暂停/继续，与是否选中文字无关。
+      if (ttsPaused) {
+        window.speechSynthesis.resume()
+        setTtsPaused(false)
+      } else {
+        window.speechSynthesis.pause()
+        setTtsPaused(true)
+      }
+      return
+    }
+    stopTts()
+    let text = ''
+    if (scope === 'selection' && editor && !editor.state.selection.empty) {
+      text = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, '\n')
+    } else {
+      text = plainText(activeChapter.content)
+    }
+    const cleaned = text.replace(/\s+/g, ' ').trim()
+    if (!cleaned) {
+      void showAlert(scope === 'selection' ? '请先在正文中选中要朗读的文字。' : '当前章节没有可朗读的正文。', '没有可朗读的内容')
+      return
+    }
+    const utterance = new SpeechSynthesisUtterance(cleaned.slice(0, 5000))
+    utterance.lang = 'zh-CN'
+    utterance.rate = Math.max(0.5, Math.min(2, preferences.ttsRate || 1))
+    utterance.onend = () => {
+      setTtsSpeaking(false)
+      setTtsPaused(false)
+    }
+    utterance.onerror = () => {
+      setTtsSpeaking(false)
+      setTtsPaused(false)
+    }
+    setTtsSpeaking(true)
+    setTtsPaused(false)
+    window.speechSynthesis.speak(utterance)
+  }
 
   const runEditorMenuAction = async (action: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll') => {
     if (!editor) return
@@ -5167,10 +6664,11 @@ function App() {
     setAttachmentsOpen(false)
     setReferencesOpen(false)
     setNamingOpen(false)
+    setGlobalSearchOpen(false)
   }
 
   const prepareUtilityPanelOpen = (kind: UtilityPanelKind) => {
-    const switching = assistantOpen || historyOpen || trashOpen || assetsOpen || attachmentsOpen || referencesOpen || namingOpen
+    const switching = assistantOpen || historyOpen || trashOpen || assetsOpen || attachmentsOpen || referencesOpen || namingOpen || globalSearchOpen
     if (switching) {
       setSuppressPanelEntry(kind)
     } else {
@@ -5228,6 +6726,32 @@ function App() {
     }
     setAssistantView('naming')
     prepareUtilityPanelOpen('naming')
+  }
+
+  const openSearch = () => {
+    if (!projectRef.current.id) return
+    if (globalSearchOpen) {
+      if (closingUtilityPanel !== 'search') void closeUtilityPanel('search')
+      return
+    }
+    prepareUtilityPanelOpen('search')
+    void getProjectMemory(projectRef.current.id).then((bundles) => setProjectMemoryBundles(bundles)).catch(() => undefined)
+    void listReferenceTexts(projectRef.current.id).then((items) => setReferenceTexts(items)).catch(() => undefined)
+    void listAttachments(projectRef.current.id).then((items) => setAttachments(items)).catch(() => undefined)
+  }
+
+  const openSearchMemory = (title: string) => {
+    setAssistantView('memory')
+    setMemoryScope('project')
+    setMemoryFilter('confirmed')
+    setMemorySearch(title.slice(0, 40))
+    prepareUtilityPanelOpen('assistant')
+  }
+
+  const jumpToSearchMatch = (chapterId: string, needle?: string) => {
+    if (needle) setSearchJumpTarget({ chapterId, needle })
+    if (chapterId !== activeChapter.id) void openChapter(chapterId)
+    if (window.innerWidth <= 760) void closeUtilityPanel('search')
   }
 
   const requestImageUpload = (insertAfterUpload: boolean) => {
@@ -5380,8 +6904,15 @@ function App() {
       }
       const profile = await analyzeStyleProfile(aiSettings, aiApiKey, project.id, sources, controller.signal)
       if (styleController.current !== controller) return
-      await saveStyleProfile(profile)
-      setStyleProfile(profile)
+      const merged: StyleProfile = {
+        ...profile,
+        ...styleDraftValues(),
+        voiceFingerprint: styleProfile.voiceFingerprint,
+        editSamples: styleProfile.editSamples,
+        updatedAt: Date.now(),
+      }
+      await saveStyleProfile(merged)
+      setStyleProfile(merged)
       setReferenceView('style')
       setStyleMessage(`已从 ${sources.length} 份参考文本提取抽象风格档案`)
     } catch (error) {
@@ -5402,6 +6933,80 @@ function App() {
   const commitStyleProfile = async () => {
     await saveStyleProfile(styleProfile)
     setStyleMessage('风格档案已保存')
+  }
+
+  const styleDraftValues = () => {
+    const lines = (value: string) => value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+    return {
+      bannedPhrases: lines(styleDraft.bannedPhrases).slice(0, 100),
+      bannedPatterns: lines(styleDraft.bannedPatterns).slice(0, 50),
+      voiceSamples: styleDraft.voiceSamples.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean).slice(0, 8),
+      styleTaboos: styleDraft.styleTaboos.trim().slice(0, 2000),
+      learnedPreferences: lines(styleDraft.learnedPreferences).slice(0, 20),
+    }
+  }
+
+  const commitStyleDraft = async () => {
+    const next: StyleProfile = {
+      ...styleProfile,
+      ...styleDraftValues(),
+      updatedAt: Date.now(),
+    }
+    setStyleProfile(next)
+    await saveStyleProfile(next)
+    setStyleMessage('文风禁区与作者声音样本已保存')
+  }
+
+  const runAuthorVoiceAnalysis = async () => {
+    const texts = project.chapters.map((chapter) => chapter.plainText.trim()).filter(Boolean)
+    if (texts.length === 0) {
+      setStyleMessage('当前作品还没有可分析的正文')
+      return
+    }
+    const fingerprint = analyzeAuthorVoice(texts)
+    const next: StyleProfile = { ...styleProfile, ...styleDraftValues(), voiceFingerprint: fingerprint, updatedAt: Date.now() }
+    setStyleProfile(next)
+    await saveStyleProfile(next)
+    setReferenceView('style')
+    setStyleMessage(`已从 ${texts.length} 章正文提取作者声音指纹`)
+  }
+
+  const clearEditSamples = async () => {
+    const next: StyleProfile = { ...styleProfile, editSamples: [], updatedAt: Date.now() }
+    setStyleProfile(next)
+    await saveStyleProfile(next)
+    setStyleMessage('已清空本书的手改样本；已归纳的偏好仍保留')
+  }
+
+  const learnFromCandidateEdit = async (candidate: DraftCandidate) => {
+    if (candidate.chapterId !== activeChapter.id) {
+      await showAlert('请先打开这份候选所属的章节，再学习这次手改。', '无法学习')
+      return
+    }
+    const learning = learnFromAuthorEdit(candidate.text, activeChapter.plainText)
+    if (!learning) {
+      await showAlert('没有检测到这份候选在正文中对应的手改。可能还没有修改，或已经被大幅重写。', '无法学习')
+      return
+    }
+    const summary = learning.signals.length > 0 ? learning.signals.join('；') : '没有识别出明确规则，只保存前后对照'
+    const confirmed = await showConfirm(
+      `检测到：${summary}。保存到《${project.title}》的文风档案？只影响当前作品，不会影响其他小说。`,
+      { title: '学习这次手改', confirmLabel: '保存到本书' },
+    )
+    if (!confirmed) return
+    const next: StyleProfile = {
+      ...styleProfile,
+      learnedPreferences: [...new Set([...(styleProfile.learnedPreferences ?? []), ...learning.signals])].slice(-20),
+      editSamples: [
+        { before: learning.before, after: learning.after, signals: learning.signals, createdAt: Date.now() },
+        ...(styleProfile.editSamples ?? []),
+      ].slice(0, 5),
+      updatedAt: Date.now(),
+    }
+    setStyleProfile(next)
+    await saveStyleProfile(next)
+    setStyleMessage(`已把这次手改保存到《${project.title}》的文风档案`)
+    setAgentMessage('已学习这次手改，只影响当前作品')
   }
 
   const changeAttachmentScope = async (attachment: Attachment, value: string) => {
@@ -5563,6 +7168,324 @@ function App() {
     }
   }
 
+  const exportPdfPreview = () => {
+    if (exportBusy) return
+    setExportBusy('pdf')
+    window.setTimeout(() => {
+      setPdfPreviewOpen(true)
+      setExportBusy(null)
+    }, 60)
+  }
+
+  const closePdfPreview = () => {
+    setPdfPreviewOpen(false)
+    setExportOpen(false)
+  }
+
+  const printPdf = () => {
+    window.print()
+  }
+
+  const loadWritingStats = async () => {
+    setStatsLoading(true)
+    try {
+      await flushWritingSession(writingSessionRef.current)
+      const sessions = await listWritingSessions(project.id, Date.now() - 90 * 86_400_000)
+      setWritingStats(aggregateWritingStats(sessions, { days: 30 }))
+    } catch {
+      setWritingStats(emptyWritingStats())
+    } finally {
+      setStatsLoading(false)
+    }
+  }
+
+  const openWritingStats = () => {
+    setStatsOpen(true)
+    void loadWritingStats()
+  }
+
+  const clearWritingStats = async () => {
+    const confirmed = await showConfirm('清空后会删除该作品的全部写作统计记录（不影响正文）。是否继续？', { title: '清空写作统计', confirmLabel: '清空', danger: true })
+    if (!confirmed) return
+    setStatsClearing(true)
+    try {
+      await clearWritingSessions(project.id)
+      writingSessionRef.current = null
+      setWritingStats(emptyWritingStats())
+    } catch (error) {
+      await showAlert(error instanceof Error ? error.message : '清空统计失败', '清空失败')
+    } finally {
+      setStatsClearing(false)
+    }
+  }
+
+  const parseComplianceWords = (value: string) => value.split(/[\n,，、;；]+/).map((word) => word.trim()).filter(Boolean)
+
+  const runComplianceScan = (scope: 'book' | 'chapter' = complianceScope, wordsText: string = complianceWordsText) => {
+    const chapters = scope === 'chapter' ? [activeChapter] : project.chapters
+    const words = parseComplianceWords(wordsText)
+    setComplianceReport(scanCompliance(chapters, words))
+    saveComplianceWords(words)
+  }
+
+  const openCompliance = () => {
+    setComplianceOpen(true)
+    runComplianceScan(complianceScope)
+  }
+
+  const refreshChapterComments = async () => {
+    try {
+      setChapterComments(await listChapterComments(project.id))
+    } catch {
+      setChapterComments([])
+    }
+  }
+
+  useEffect(() => {
+    if (!hydrated || !project.id) return
+    void refreshChapterComments()
+  }, [hydrated, project.id])
+
+  const openComments = () => {
+    setCommentsOpen(true)
+    void refreshChapterComments()
+  }
+
+  const commentLocated = (comment: ChapterComment) => {
+    const chapter = project.chapters.find((item) => item.id === comment.chapterId)
+    if (!chapter) return false
+    return comment.quote ? chapter.plainText.includes(comment.quote) : true
+  }
+
+  const importComments = async (file: File | null) => {
+    if (!file) return
+    try {
+      const bundle = parseCommentBundle(await file.text())
+      const stamp = Date.now()
+      const imported: ChapterComment[] = bundle.comments.map((comment, index) => ({
+        id: `comment-${stamp}-${index}`,
+        projectId: project.id,
+        chapterId: comment.chapterId,
+        anchor: comment.anchor,
+        quote: comment.quote,
+        comment: comment.comment,
+        author: comment.author || '匿名读者',
+        createdAt: comment.createdAt || stamp,
+        resolved: false,
+      }))
+      await replaceChapterComments(project.id, imported)
+      setChapterComments(imported)
+      const located = imported.filter(commentLocated).length
+      await showAlert(
+        `已导入 ${imported.length} 条批注，其中 ${located} 条可在正文中定位${located < imported.length ? `，${imported.length - located} 条归入未定位` : ''}。`,
+        '批注导入完成',
+      )
+    } catch (error) {
+      await showAlert(error instanceof Error ? error.message : '批注导入失败', '批注导入失败')
+    }
+  }
+
+  const locateComment = (comment: ChapterComment) => {
+    const chapter = project.chapters.find((item) => item.id === comment.chapterId)
+    if (!chapter) {
+      void showAlert('这条批注对应的章节已被删除。', '无法定位')
+      return
+    }
+    void openChapter(chapter.id)
+    setCommentsOpen(false)
+    if (comment.quote) {
+      setFindQuery(comment.quote.slice(0, 40))
+      setFindOpen(true)
+    }
+  }
+
+  const toggleCommentResolved = async (comment: ChapterComment) => {
+    const next = { ...comment, resolved: !comment.resolved }
+    setChapterComments((previous) => previous.map((item) => (item.id === comment.id ? next : item)))
+    try {
+      await upsertChapterComment(next)
+    } catch (error) {
+      await showAlert(error instanceof Error ? error.message : '更新批注失败', '更新失败')
+      void refreshChapterComments()
+    }
+  }
+
+  const removeComment = async (comment: ChapterComment) => {
+    setChapterComments((previous) => previous.filter((item) => item.id !== comment.id))
+    try {
+      await deleteChapterComment(comment.id)
+    } catch (error) {
+      await showAlert(error instanceof Error ? error.message : '删除批注失败', '删除失败')
+      void refreshChapterComments()
+    }
+  }
+
+  const clearComments = async () => {
+    const confirmed = await showConfirm('清空后会删除这个作品的全部批注（不影响正文）。是否继续？', { title: '清空批注', confirmLabel: '清空', danger: true })
+    if (!confirmed) return
+    try {
+      await clearChapterComments(project.id)
+      setChapterComments([])
+    } catch (error) {
+      await showAlert(error instanceof Error ? error.message : '清空批注失败', '清空失败')
+    }
+  }
+
+  const exportShareDraft = () => {
+    try {
+      const html = buildShareDraftHtml(project, project.chapters)
+      downloadFile(html, `${project.title}-分享稿.html`, 'text/html;charset=utf-8')
+      setExportOpen(false)
+    } catch (error) {
+      void showAlert(error instanceof Error ? error.message : '分享稿生成失败', '导出失败')
+    }
+  }
+
+  const syncDirectoryReady = () => {
+    if (!syncAvailable()) {
+      void showAlert('跨设备同步只在桌面版可用。', '不可用')
+      return ''
+    }
+    const directory = preferences.syncDirectory.trim()
+    if (!directory) {
+      void showAlert('请先在「设置 → 应用」里指定同步目录（选网盘的本地同步文件夹）。', '未设置同步目录')
+      return ''
+    }
+    return directory
+  }
+
+  const checkSyncRemote = async (silent = false) => {
+    const directory = syncDirectoryReady()
+    if (!directory) return null
+    setSyncBusy('check')
+    try {
+      const remote = await readSyncManifest(directory, project.id)
+      setSyncRemote(remote)
+      if (!silent) {
+        setSyncMessage(remote
+          ? `远端版本 r${remote.revision} · ${remote.deviceLabel || '未知设备'} · ${new Date(remote.updatedAt).toLocaleString()}`
+          : '同步目录里还没有这个作品的版本')
+      }
+      return remote
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : '读取远端版本失败')
+      return null
+    } finally {
+      setSyncBusy(null)
+    }
+  }
+
+  const pushToSyncDirectory = async () => {
+    const directory = syncDirectoryReady()
+    if (!directory) return
+    setSyncBusy('push')
+    setSyncMessage('正在生成同步包…')
+    try {
+      const remote = await readSyncManifest(directory, project.id).catch(() => null)
+      const last = loadLastSync(project.id)
+      if (remote && remote.deviceId !== getSyncDeviceId() && (!last || remote.hash !== last.hash)) {
+        const proceed = await showConfirm(
+          `同步目录里的版本在本机上次同步后又被修改过（${remote.deviceLabel || '另一台设备'} · ${new Date(remote.updatedAt).toLocaleString()}）。继续上传会用本机版本覆盖远端——确认前我会先把远端存成冲突副本。`,
+          { title: '远端有更新版本', confirmLabel: '仍然上传' },
+        )
+        if (!proceed) {
+          setSyncMessage('已取消上传')
+          return
+        }
+        const remoteBytes = await readSyncPackage(directory, project.id)
+        if (remoteBytes) {
+          const conflictPath = await writeSyncConflict(directory, project.id, remoteBytes.buffer as ArrayBuffer)
+          setSyncMessage(`已保留远端冲突副本：${conflictPath}`)
+        }
+      }
+      const { blob, safeTitle } = await buildProjectBackupBlob()
+      const bytes = await blob.arrayBuffer()
+      const hash = await hashSyncBytes(bytes)
+      const manifest: SyncManifest = {
+        version: 1,
+        projectId: project.id,
+        projectTitle: safeTitle,
+        revision: (remote?.revision ?? 0) + 1,
+        updatedAt: Date.now(),
+        deviceId: getSyncDeviceId(),
+        deviceLabel: getSyncDeviceLabel(),
+        size: bytes.byteLength,
+        hash,
+      }
+      const target = await writeSyncPackage(directory, manifest, bytes)
+      saveLastSync(project.id, { hash, at: manifest.updatedAt })
+      setSyncRemote(manifest)
+      setSyncMessage(`已上传 r${manifest.revision}：${target}`)
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : '同步失败')
+      await showAlert(error instanceof Error ? error.message : '同步失败', '同步失败')
+    } finally {
+      setSyncBusy(null)
+    }
+  }
+
+  const pullFromSyncDirectory = async () => {
+    const directory = syncDirectoryReady()
+    if (!directory) return
+    setSyncBusy('pull')
+    try {
+      const remote = await readSyncManifest(directory, project.id)
+      if (!remote) {
+        setSyncMessage('同步目录里还没有这个作品的版本')
+        return
+      }
+      const last = loadLastSync(project.id)
+      if (last && last.hash === remote.hash) {
+        setSyncMessage('本机与远端内容一致，无需拉取')
+        return
+      }
+      const confirmed = await showConfirm(
+        `将把远端 r${remote.revision}（${remote.deviceLabel || '未知设备'} · ${new Date(remote.updatedAt).toLocaleString()}）导入为一个新项目副本，不会覆盖当前项目。是否继续？`,
+        { title: '从同步目录拉取', confirmLabel: '拉取' },
+      )
+      if (!confirmed) {
+        setSyncMessage('已取消拉取')
+        return
+      }
+      const bytes = await readSyncPackage(directory, project.id)
+      if (!bytes || bytes.byteLength === 0) {
+        setSyncMessage('同步目录里没有找到同步包')
+        return
+      }
+      const file = new File([bytes], `${remote.projectTitle || project.title}-同步拉取.zili`, { type: 'application/zip' })
+      await importDocument(file, 'new')
+      saveLastSync(project.id, { hash: remote.hash, at: remote.updatedAt })
+      setSyncRemote(remote)
+      setSyncMessage(`已从远端 r${remote.revision} 导入新项目副本`)
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : '拉取失败')
+      await showAlert(error instanceof Error ? error.message : '拉取失败', '拉取失败')
+    } finally {
+      setSyncBusy(null)
+    }
+  }
+
+  const preparePdfChapterHtml = (html: string) => {
+    const parsed = new DOMParser().parseFromString(html, 'text/html')
+    const blocks: string[] = []
+    for (const element of parsed.body.children) {
+      const image = element instanceof HTMLImageElement ? element : element.querySelector('img')
+      if (image && (element instanceof HTMLImageElement || element.matches('figure') || !element.textContent?.trim())) {
+        const figure = image.closest('figure')
+        const width = figure?.getAttribute('data-width') ?? image.getAttribute('data-width') ?? '100'
+        const align = figure?.getAttribute('data-align') ?? image.getAttribute('data-align') ?? 'center'
+        const caption = figure?.getAttribute('data-caption') ?? image.getAttribute('data-caption') ?? figure?.querySelector('figcaption')?.textContent ?? ''
+        const safeWidth = ['40', '60', '80', '100'].includes(width) ? width : '100'
+        const safeAlign = ['left', 'center', 'right'].includes(align) ? align : 'center'
+        blocks.push(`<figure class="pdf-image" data-align="${safeAlign}" style="width:${safeWidth}%"><img src="${image.src}"><figcaption>${escapeHtml(caption)}</figcaption></figure>`)
+        continue
+      }
+      const text = element.textContent?.trim()
+      if (text) blocks.push(`<p>${escapeHtml(text)}</p>`)
+    }
+    return blocks.join('')
+  }
+
   const openExportDialog = async () => {
     setExportOpen(true)
     setExportReport(null)
@@ -5596,73 +7519,135 @@ function App() {
     }
   }
 
+  const chooseSyncDirectory = async () => {
+    if (!isTauri()) {
+      await showAlert('浏览器模式无法访问本机文件夹，跨设备同步只在桌面版可用。', '选择同步目录')
+      return
+    }
+    try {
+      const selected = await openDirectoryDialog({ directory: true, multiple: false, title: '选择网盘同步文件夹' })
+      if (typeof selected === 'string' && selected.trim()) {
+        setPreferences((current) => ({ ...current, syncDirectory: selected.trim() }))
+        setSyncMessage(`同步目录：${selected.trim()}`)
+      }
+    } catch (error) {
+      await showAlert(error instanceof Error ? error.message : '无法选择同步文件夹', '选择同步目录失败')
+    }
+  }
+
+  const buildProjectBackupBlob = async (): Promise<{ blob: Blob; safeTitle: string }> => {
+    const { default: JSZip } = await import('jszip')
+    const zip = new JSZip()
+    const assets = await listImageAssets(project.id)
+    const projectAttachments = await listAttachments(project.id)
+    const projectReferences = await listReferenceTexts(project.id)
+    const projectData = JSON.parse(exportProjectBackup(project)) as Record<string, unknown>
+    projectData.ai = await exportAiProjectData(project)
+    projectData.assets = assets.map((asset) => ({
+      id: asset.id,
+      fileName: asset.fileName,
+      extension: asset.extension,
+      mediaType: asset.mediaType,
+      size: asset.size,
+      source: asset.src,
+      path: `assets/${asset.id}.${asset.extension}`,
+    }))
+    projectData.attachments = projectAttachments.map((attachment) => ({
+      id: attachment.id,
+      fileName: attachment.fileName,
+      extension: attachment.extension,
+      mediaType: attachment.mediaType,
+      size: attachment.size,
+      scopeType: attachment.scopeType,
+      scopeId: attachment.scopeId,
+      path: `attachments/${attachment.id}.${attachment.extension}`,
+    }))
+    projectData.references = projectReferences.map((reference) => ({
+      id: reference.id,
+      fileName: reference.fileName,
+      mediaType: reference.mediaType,
+      rightsConfirmedAt: reference.rightsConfirmedAt,
+      path: `references/${reference.id}.${reference.extension}`,
+    }))
+    zip.file('project.json', JSON.stringify(projectData, null, 2))
+    for (const asset of assets) {
+      zip.file(`assets/${asset.id}.${asset.extension}`, await readImageAsset(asset))
+    }
+    for (const attachment of projectAttachments) {
+      zip.file(`attachments/${attachment.id}.${attachment.extension}`, await readAttachment(attachment))
+    }
+    for (const reference of projectReferences) {
+      zip.file(`references/${reference.id}.${reference.extension}`, await readReferenceText(reference))
+    }
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+    const safeTitle = project.title.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim() || '未命名作品'
+    return { blob, safeTitle }
+  }
+
   const exportBackup = async (silent = false) => {
     setBackupState('saving')
     setBackupMessage('正在生成备份')
     try {
-      const { default: JSZip } = await import('jszip')
-      const zip = new JSZip()
-      const assets = await listImageAssets(project.id)
-      const projectAttachments = await listAttachments(project.id)
-      const projectReferences = await listReferenceTexts(project.id)
-      const projectData = JSON.parse(exportProjectBackup(project)) as Record<string, unknown>
-      projectData.ai = await exportAiProjectData(project)
-      projectData.assets = assets.map((asset) => ({
-        id: asset.id,
-        fileName: asset.fileName,
-        extension: asset.extension,
-        mediaType: asset.mediaType,
-        size: asset.size,
-        source: asset.src,
-        path: `assets/${asset.id}.${asset.extension}`,
-      }))
-      projectData.attachments = projectAttachments.map((attachment) => ({
-        id: attachment.id,
-        fileName: attachment.fileName,
-        extension: attachment.extension,
-        mediaType: attachment.mediaType,
-        size: attachment.size,
-        scopeType: attachment.scopeType,
-        scopeId: attachment.scopeId,
-        path: `attachments/${attachment.id}.${attachment.extension}`,
-      }))
-      projectData.references = projectReferences.map((reference) => ({
-        id: reference.id,
-        fileName: reference.fileName,
-        mediaType: reference.mediaType,
-        rightsConfirmedAt: reference.rightsConfirmedAt,
-        path: `references/${reference.id}.${reference.extension}`,
-      }))
-      zip.file('project.json', JSON.stringify(projectData, null, 2))
-      for (const asset of assets) {
-        zip.file(`assets/${asset.id}.${asset.extension}`, await readImageAsset(asset))
-      }
-      for (const attachment of projectAttachments) {
-        zip.file(`attachments/${attachment.id}.${attachment.extension}`, await readAttachment(attachment))
-      }
-      for (const reference of projectReferences) {
-        zip.file(`references/${reference.id}.${reference.extension}`, await readReferenceText(reference))
-      }
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
-      if (isTauri() && preferences.projectSavePath.trim()) {
-        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()))
-        const savedPath = await invoke<string>('save_project_backup', {
-          directory: preferences.projectSavePath.trim(),
-          fileName: `${project.title}.zili`,
-          bytes,
+      const { blob, safeTitle } = await buildProjectBackupBlob()
+      const fileName = `${safeTitle}.zili`
+      if (isTauri()) {
+        let targetPath = ''
+        if (silent) {
+          if (!preferences.projectSavePath.trim()) {
+            setBackupState('idle')
+            setBackupMessage('没有设置作品保存路径，已跳过自动备份')
+            return
+          }
+          const directory = preferences.projectSavePath.trim().replace(/[\\/]+$/, '')
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '').slice(0, 19)
+          const timestampedName = `${safeTitle}.${timestamp}.zili`
+          const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()))
+          const savedPath = await invoke<string>('save_auto_project_backup', {
+            directory,
+            fileName: timestampedName,
+            prefix: `${safeTitle}.`,
+            bytes,
+            keep: Math.max(1, Math.min(50, Math.round(preferences.backupRetentionCount) || 10)),
+          })
+          setBackupState('saved')
+          setBackupMessage(`自动备份已保存：${savedPath}`)
+          return
+        }
+        const defaultPath = preferences.projectSavePath.trim()
+          ? `${preferences.projectSavePath.trim().replace(/[\\/]+$/, '')}\\${fileName}`
+          : fileName
+        const selected = await saveFileDialog({
+          defaultPath,
+          title: '保存完整项目备份',
+          filters: [{ name: '字里写作备份', extensions: ['zili'] }],
         })
-        if (!silent) await showAlert(`完整作品备份已保存到：\n${savedPath}`, '备份完成')
+        if (!selected) {
+          setBackupState('idle')
+          setBackupMessage('已取消备份')
+          return
+        }
+        targetPath = selected.toLowerCase().endsWith('.zili') ? selected : `${selected}.zili`
+        const directory = targetPath.replace(/[\\/][^\\/]+$/, '')
+        const name = targetPath.slice(directory.length).replace(/^[\\/]+/, '')
+        if (!directory || !name) throw new Error('无法确定备份保存位置')
+        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()))
+        const savedPath = await invoke<string>('save_project_backup', { directory, fileName: name, bytes })
+        setBackupState('saved')
+        setBackupMessage(`备份已保存到：${savedPath}`)
       } else {
-        downloadBlob(blob, `${project.title}.zili`)
+        downloadBlob(blob, fileName)
+        setBackupState('saved')
+        setBackupMessage('备份文件已下载')
       }
-      setBackupState('saved')
-      setBackupMessage(isTauri() && preferences.projectSavePath.trim() ? '备份已保存到作品路径' : '备份文件已下载')
     } catch (error) {
       setBackupState('error')
       setBackupMessage(error instanceof Error ? error.message : '项目备份失败')
       if (!silent) await showAlert(error instanceof Error ? error.message : '项目备份失败', '备份失败')
     }
   }
+
+  // 定时自动备份通过 ref 读取最新的 exportBackup，避免定时器因 project 变更被反复重置。
+  autoBackupRunner.current = () => exportBackup(true)
 
   const beginImportProgress = () => {
     if (importProgressTimer.current) window.clearTimeout(importProgressTimer.current)
@@ -6001,16 +7986,65 @@ function App() {
     ))
   }, [chapterCountByVolume, chapterIndexById, collapsedVolumes, deferredNavigationChapters, expandedSceneChapters, filteredChaptersByVolume, hasProject, historyOpen, preferences.motionEnabled, project.activeChapterId, project.activeSceneId, project.scenes, project.volumes, removingIds, scenePanelOpen, sidebarOpen, unmountedCollapsedVolumes])
 
+  // 候选来自用户自己保存过的接口模型；内置服务自身的模型名不会写进备选，也不额外过滤用户模型。
+  const taskModelChoices = [...new Set([
+    ...Object.values(aiSettings.successfulModels),
+    ...(isBuiltinAgnesProvider(aiSettings) ? [] : [aiSettings.model, ...aiModels]),
+    ...Object.values(aiSettings.taskRoutes).map((route) => route.model),
+  ].map((model) => model.trim()).filter(Boolean))]
+
+  const builtinEndpointKeys = new Set(Object.values(BUILTIN_AGNES_ENDPOINTS).map((endpoint) => endpoint.toLowerCase()))
+  const endpointChoices = [...new Set([
+    ...(isBuiltinAgnesProvider(aiSettings) ? [] : [aiSettings.baseUrl.trim()]),
+    ...aiSettings.successfulBaseUrls,
+    ...Object.keys(aiSettings.successfulModels),
+    ...Object.values(aiSettings.taskRoutes).map((route) => route.baseUrl.trim()),
+  ].filter(Boolean))].filter((endpoint) => !builtinEndpointKeys.has(endpoint.toLowerCase()))
+  const defaultCustomBaseUrl = endpointChoices[0] ?? ''
+  const updateTaskRoute = (taskType: string, next: AiTaskRoute | null) => setAiSettings((current) => {
+    const taskRoutes = { ...current.taskRoutes }
+    if (!next) delete taskRoutes[taskType]
+    else taskRoutes[taskType] = next
+    return { ...current, taskRoutes }
+  })
+
+  const paletteCommands: PaletteCommand[] = [
+    { id: 'settings', label: '打开设置', hint: '外观、AI、应用', run: () => setSettingsOpen(true) },
+    { id: 'export', label: '导出作品', hint: 'TXT / Markdown / DOCX / EPUB / PDF', run: () => setExportOpen(true) },
+    { id: 'stats', label: '写作统计', shortcut: preferences.keymap.stats, run: openWritingStats },
+    { id: 'compliance', label: '合规自查', hint: '本地扫描敏感词', shortcut: preferences.keymap.compliance, run: openCompliance },
+    { id: 'comments', label: '查看读者批注', hint: `${chapterComments.length} 条`, run: openComments },
+    { id: 'share-draft', label: '导出分享稿', hint: '只读 HTML，带段落锚点', run: exportShareDraft },
+    { id: 'sync-push', label: '同步到网盘目录', run: () => { void pushToSyncDirectory() } },
+    { id: 'sync-check', label: '检查远端同步版本', run: () => { void checkSyncRemote() } },
+    { id: 'backup', label: '立即备份', shortcut: preferences.keymap.backup, run: () => { void exportBackup(false) } },
+    { id: 'focus', label: focusMode ? '退出专注模式' : '进入专注模式', shortcut: preferences.keymap.focus, run: () => setFocusMode((value) => !value) },
+    { id: 'search', label: '全局搜索', shortcut: preferences.keymap.search, run: openSearch },
+    { id: 'find', label: '查找 / 替换', hint: 'Ctrl+F', run: () => setFindOpen(true) },
+    { id: 'tts-chapter', label: '朗读本章', run: () => speakTts('chapter') },
+    { id: 'tts-selection', label: '朗读选区', hint: '需先在正文选中文字', run: () => speakTts('selection') },
+    { id: 'tts-stop', label: '停止朗读', run: stopTts },
+    { id: 'memory-chapter', label: '故事记忆 · 当前章', run: () => { setAssistantOpen(true); setAssistantView('memory'); setMemoryScope('chapter') } },
+    { id: 'memory-characters', label: '故事记忆 · 人物', run: () => { setAssistantOpen(true); setAssistantView('memory'); setMemoryScope('characters') } },
+    { id: 'memory-timeline', label: '故事记忆 · 时间线', run: () => { setAssistantOpen(true); setAssistantView('memory'); setMemoryScope('timeline') } },
+    { id: 'advisor', label: '打开创作顾问', run: () => { setAssistantOpen(true); setAssistantView('advisor') } },
+    { id: 'outline-coverage', label: '检测大纲覆盖度', run: () => { setAssistantOpen(true); setAssistantView('advisor'); runOutlineCoverage() } },
+    { id: 'review', label: '打开审稿', run: () => { setAssistantOpen(true); setAssistantView('review') } },
+    { id: 'draft', label: '打开写作助手', run: () => { setAssistantOpen(true); setAssistantView('draft') } },
+    { id: 'sidebar', label: '显示 / 隐藏章节目录', run: () => { void toggleSidebar() } },
+    { id: 'reward', label: '支持作者', run: () => setRewardOpen(true) },
+  ]
+
   return (
       <main
-      className={`app-shell theme-${preferences.theme} ${preferences.uiTextColor ? 'has-custom-ui-text' : ''} ${!project.id ? 'is-empty-project' : ''} ${focusMode ? 'is-focus' : ''} ${focusMode && preferences.paragraphFocus ? 'is-paragraph-focus' : ''} font-${preferences.fontFamily} ${preferences.motionEnabled ? 'motion-enabled' : 'motion-disabled'} ${!sidebarOpen && !assistantOpen && !namingOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen ? 'is-wide-editor' : ''}`}
+      className={`app-shell theme-${preferences.theme} ${preferences.uiTextColor ? 'has-custom-ui-text' : ''} ${!project.id ? 'is-empty-project' : ''} ${focusMode ? 'is-focus' : ''} ${focusMode && preferences.paragraphFocus ? 'is-paragraph-focus' : ''} font-${preferences.fontFamily} ${preferences.motionEnabled ? 'motion-enabled' : 'motion-disabled'} ${!sidebarOpen && !assistantOpen && !namingOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen && !globalSearchOpen ? 'is-wide-editor' : ''}`}
       style={{
         ...createUiTypographyVariables(preferences.uiFontSize),
         ...(preferences.uiTextColor ? { '--ui-text-color': preferences.uiTextColor } : {}),
         '--editor-font-size': `${preferences.fontSize}px`,
         '--editor-line-height': preferences.lineHeight,
         '--editor-width': `${preferences.pageWidth}px`,
-        '--content-center-offset': `${(sidebarOpen ? 121 : 0) - (assistantOpen || namingOpen || historyOpen || trashOpen || assetsOpen || attachmentsOpen || referencesOpen ? 165 : 0)}px`,
+        '--content-center-offset': `${(sidebarOpen ? 121 : 0) - (assistantOpen || namingOpen || historyOpen || trashOpen || assetsOpen || attachmentsOpen || referencesOpen || globalSearchOpen ? 165 : 0)}px`,
       } as CSSProperties}
       onContextMenu={(event) => {
         const target = event.target
@@ -6145,6 +8179,10 @@ function App() {
                 <span>更多工具</span>
               </button>
               {sidebarToolsOpen && <div className="sidebar-tools-menu" role="menu">
+            <button className={`trash-entry ${globalSearchOpen ? 'active' : ''}`} aria-pressed={globalSearchOpen} onClick={() => { setSidebarToolsOpen(false); openSearch() }}>
+              <TextSearch size={16} />
+              <span>全书检索</span>
+            </button>
             <button className={`trash-entry ${namingOpen ? 'active' : ''}`} aria-pressed={namingOpen} onClick={() => { setSidebarToolsOpen(false); openNaming() }}>
               <Dices size={16} />
               <span>文化取名</span>
@@ -6210,12 +8248,19 @@ function App() {
                 <button className="icon-button" onClick={() => requestImageUpload(true)} title="插入图片">
                   <ImagePlus size={17} />
                 </button>
-                <button className="icon-button" onClick={() => { setFindOpen(true); window.setTimeout(() => findInput.current?.focus(), 0) }} title="查找替换 (Ctrl+F)">
+                <button className="icon-button" onClick={() => void openSearch()} title="全书检索 (Ctrl+Shift+K)">
+                  <TextSearch size={17} />
+                </button>
+                <button className="icon-button" onClick={() => { setFindOpen(true); window.setTimeout(() => findInput.current?.focus(), 0) }} title="查找替换 (Ctrl+F / Ctrl+H)">
                   <Search size={17} />
                 </button>
                 <button className="icon-button" onClick={() => void openHistory()} title="版本历史">
                   <History size={17} />
                 </button>
+                <button className={`icon-button ${ttsSpeaking ? 'active' : ''}`} onClick={() => speakTts(editor && !editor.state.selection.empty ? 'selection' : 'chapter')} title={ttsSpeaking ? (ttsPaused ? '继续朗读 (单击)' : '暂停朗读 (单击)') : '朗读本章或选区'}>
+                  {ttsSpeaking ? (ttsPaused ? <Play size={17} /> : <Pause size={17} />) : <Volume2 size={17} />}
+                </button>
+                {ttsSpeaking && <button className="icon-button" onClick={stopTts} title="停止朗读"><X size={16} /></button>}
                 <button className="focus-button" onClick={() => setFocusMode(true)} title="进入专注模式 (Ctrl+Shift+F)">
                   <Focus size={17} />
                   <span>专注</span>
@@ -6280,16 +8325,16 @@ function App() {
             </div>
           )}
 
-          {findOpen && !focusMode && (
+          {findOpen && (
             <div className="find-panel">
               <div className="find-line">
-                <input ref={findInput} value={findQuery} onChange={(event) => setFindQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') findNext() }} placeholder="查找" />
+                <input ref={findInput} value={findQuery} onChange={(event) => setFindQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') findNext() }} placeholder="查找（Ctrl+F）" />
                 <span>{findCount} 处</span>
                 <button onClick={findNext}>下一个</button>
                 <button className="icon-button small" onClick={() => setFindOpen(false)} title="关闭查找"><X size={16} /></button>
               </div>
               <div className="find-line">
-                <input value={replaceText} onChange={(event) => setReplaceText(event.target.value)} placeholder="替换为" />
+                <input ref={replaceInput} value={replaceText} onChange={(event) => setReplaceText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') replaceCurrent() }} placeholder="替换为（Ctrl+H）" />
                 <button onClick={replaceCurrent}>替换</button>
                 <button onClick={replaceAll}>全部替换</button>
               </div>
@@ -6370,6 +8415,7 @@ function App() {
 
           {!focusMode && (
             <nav className="mobile-tool-dock" aria-label="写作工具">
+              <button className={globalSearchOpen ? 'active' : ''} aria-pressed={globalSearchOpen} onClick={() => void openSearch()} title="全书检索"><TextSearch size={17} /><span>检索</span></button>
               <button className={namingOpen ? 'active' : ''} aria-pressed={namingOpen} onClick={openNaming} title="文化取名"><Dices size={17} /><span>取名</span></button>
               <button aria-pressed={sidebarOpen} onClick={() => void toggleSidebar()} title="章节"><Menu size={17} /><span>章节</span></button>
               <button className={assetsOpen ? 'active' : ''} aria-pressed={assetsOpen} onClick={() => void openAssets()} title="图片"><Images size={17} /><span>图片</span></button>
@@ -6422,6 +8468,9 @@ function App() {
                 </span>
               )}
               {!preferences.wordGoalEnabled && <span>{wordCount} 字</span>}
+              <button className="stats-trigger" onClick={openWritingStats} title="写作统计">
+                <TrendingUp size={13} />
+              </button>
             </span>
           </footer>
 
@@ -6470,7 +8519,7 @@ function App() {
             }}
           />
 
-          {!focusMode && !assistantOpen && !namingOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen && (
+          {!focusMode && !assistantOpen && !namingOpen && !historyOpen && !trashOpen && !assetsOpen && !attachmentsOpen && !referencesOpen && !globalSearchOpen && (
             <button className="assistant-trigger" aria-label="字里助手" onClick={openAgentAssistant}>
               <Sparkles size={17} />
               <span>字里助手</span>
@@ -6488,7 +8537,11 @@ function App() {
         </section>
 
         {(assistantOpen || namingOpen) && (
-          <aside className={`assistant-panel ${namingOpen ? 'naming-panel' : ''} ${focusMode ? 'focus-overlay' : ''} ${closingUtilityPanel === 'assistant' || closingUtilityPanel === 'naming' ? 'is-closing' : ''}`}>
+          <aside className={`assistant-panel ${namingOpen ? 'naming-panel' : ''} ${focusMode ? 'focus-overlay' : ''} ${closingUtilityPanel === 'assistant' || closingUtilityPanel === 'naming' ? 'is-closing' : ''}`} onPaste={(event) => {
+            if (namingOpen || assistantView !== 'assistant') return
+            if (event.target instanceof Element && event.target.closest('textarea, input')) return
+            pasteAgentImages(event)
+          }}>
             <div className="assistant-header">
               <div>{assistantView === 'memory' ? <BookOpenText size={17} /> : assistantView === 'qa' ? <MessageSquareText size={17} /> : assistantView === 'draft' ? <Pencil size={17} /> : assistantView === 'review' ? <CheckCircle2 size={17} /> : assistantView === 'tools' ? <ListTree size={17} /> : assistantView === 'naming' ? <Dices size={17} /> : <Sparkles size={17} />}<strong>{assistantView === 'memory' ? '故事记忆' : assistantView === 'qa' ? '询问作品' : assistantView === 'advisor' ? '创作顾问' : assistantView === 'draft' ? '候选文本' : assistantView === 'review' ? '审稿中心' : assistantView === 'tools' ? '创作工具' : assistantView === 'naming' ? '文化取名' : '字里助手'}</strong></div>
               <div className="assistant-header-actions">
@@ -6619,7 +8672,29 @@ function App() {
                     <input value={memorySearch} onChange={(event) => setMemorySearch(event.target.value)} placeholder="搜索人物、档案、关系或轨迹" onContextMenu={openInputContextMenu} />
                     <span>{characterMemoryProfiles.length} 人</span>
                   </div>
-                  {projectMemoryLoading ? <p className="memory-empty">正在汇总人物资料…</p> : characterMemoryProfiles.length === 0 ? <p className="memory-empty">还没有已确认的人物资料。分析并确认人物、人物状态或关系后，这里会形成可追溯的人物档案。</p> : selectedCharacterProfile && (
+                  <div className="character-view-toggle" role="tablist" aria-label="人物视图切换">
+                    <button role="tab" aria-selected={characterView === 'list'} className={characterView === 'list' ? 'active' : ''} onClick={() => setCharacterView('list')}>列表</button>
+                    <button role="tab" aria-selected={characterView === 'graph'} className={characterView === 'graph' ? 'active' : ''} onClick={() => setCharacterView('graph')}>关系图</button>
+                    <button role="tab" aria-selected={characterView === 'timeline'} className={characterView === 'timeline' ? 'active' : ''} onClick={() => setCharacterView('timeline')}>时间轴</button>
+                  </div>
+                  {projectMemoryLoading ? <p className="memory-empty">正在汇总人物资料…</p> : characterMemoryProfiles.length === 0 ? <p className="memory-empty">还没有已确认的人物资料。分析并确认人物、人物状态或关系后，这里会形成可追溯的人物档案。</p> : characterView === 'graph' ? (
+                    <RelationshipGraphView
+                      profiles={allCharacterMemoryProfiles}
+                      project={project}
+                      scope={effectiveRelationshipScope}
+                      onScopeChange={setRelationshipScope}
+                      search={memorySearch}
+                      currentChapterId={activeChapter.id}
+                      currentVolumeId={activeChapter.volumeId}
+                      onOpenEvidence={(candidate) => void openAnswerCitation({ evidenceId: candidate.id, chapterId: candidate.chapterId, chapterTitle: project.chapters.find((item) => item.id === candidate.chapterId)?.title ?? '未知章节', nodeId: candidate.evidenceNodeId, quote: candidate.evidenceQuote, claim: candidate.detail })}
+                    />
+                  ) : characterView === 'timeline' ? (
+                    <CharacterTimelineView
+                      profiles={allCharacterMemoryProfiles}
+                      project={project}
+                      onOpenEvidence={(candidate) => void openAnswerCitation({ evidenceId: candidate.id, chapterId: candidate.chapterId, chapterTitle: project.chapters.find((item) => item.id === candidate.chapterId)?.title ?? '未知章节', nodeId: candidate.evidenceNodeId, quote: candidate.evidenceQuote, claim: candidate.detail })}
+                    />
+                  ) : selectedCharacterProfile && (
                     <div className="character-memory-workspace">
                       <aside className="character-directory" aria-label="人物列表">
                         {characterMemoryProfiles.map((profile) => <button className={selectedCharacterProfile.id === profile.id ? 'active' : ''} key={profile.id} onClick={() => setSelectedCharacterProfileId(profile.id)}>
@@ -6884,6 +8959,41 @@ function App() {
                       <textarea value={outlineInstruction} placeholder={`说明这一层需要怎样安排`} onChange={(event) => setOutlineInstruction(event.target.value)} />
                       <button onClick={() => void runOutlineGeneration()}>{advisorBusy === 'outline' ? '停止' : `推演${OUTLINE_LEVEL_LABELS[outlineLevel]}`}</button>
                     </div>
+                    <div className="outline-coverage-box">
+                      <button onClick={() => runOutlineCoverage()} disabled={advisorBusy !== null}>检测大纲覆盖度</button>
+                      <span>把章节/场景节拍与已写正文对照，标出尚未落实的节拍</span>
+                    </div>
+                    {outlineCoverage && (
+                      <div className="outline-coverage-report">
+                        <div className="outline-coverage-summary">
+                          <span>已覆盖 <strong>{outlineCoverage.covered}</strong></span>
+                          <span>部分 <strong>{outlineCoverage.partial}</strong></span>
+                          <span>未覆盖 <strong>{outlineCoverage.missing}</strong></span>
+                          <span>已绑定 <strong>{outlineCoverage.linked}</strong></span>
+                        </div>
+                        <div className="outline-coverage-list">
+                          {outlineCoverage.items.map((item) => (
+                            <article className={`coverage-${item.status}`} key={item.node.id}>
+                              <div>
+                                <strong>{item.node.title}</strong>
+                                <small>{item.source === 'linked'
+                                  ? `已绑定：${item.matchedChapterTitle ?? '未知章节'}`
+                                  : item.matchedChapterTitle ? `推断：${item.matchedChapterTitle}` : '未匹配到章节'}</small>
+                                {item.source === 'text' && item.matchedChapterId && (
+                                  <button
+                                    className="coverage-adopt"
+                                    title="把这个匹配写入显式绑定"
+                                    onClick={() => { void bindOutlineNodeChapter(item.node.id, item.matchedChapterId as string).then((next) => { if (next) runOutlineCoverage(next) }) }}
+                                  >采纳</button>
+                                )}
+                              </div>
+                              <p>{item.node.summary}</p>
+                              {item.unmatchedTokens.length > 0 && <p className="coverage-unmatched">正文未出现：{item.unmatchedTokens.join('、')}</p>}
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="outline-node-list">
                       {creativeWorkspace.outline.filter((node) => node.level === outlineLevel).length === 0 && <p className="memory-empty">这一层还没有大纲节点</p>}
                       {creativeWorkspace.outline.filter((node) => node.level === outlineLevel).map((node) => <article className={`outline-node ${node.locked ? 'locked' : ''}`} key={node.id}>
@@ -6893,6 +9003,15 @@ function App() {
                         </div></div>
                         <input aria-label="大纲标题" value={node.title} disabled={node.locked} onChange={(event) => editOutlineNode(node.id, { title: event.target.value })} onBlur={() => void commitOutlineNode(node)} onContextMenu={openInputContextMenu} />
                         <textarea aria-label="大纲内容" value={node.summary} disabled={node.locked} onChange={(event) => editOutlineNode(node.id, { summary: event.target.value })} onBlur={() => void commitOutlineNode(node)} />
+                        {(node.level === 'chapter' || node.level === 'scene') && (
+                          <label className="outline-node-bind">
+                            <span>绑定章节</span>
+                            <select value={linkedChapterIdFor(node.id)} disabled={node.locked} onChange={(event) => void bindOutlineNodeChapter(node.id, event.target.value)}>
+                              <option value="">未绑定（按关键词推断）</option>
+                              {project.chapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.title}</option>)}
+                            </select>
+                          </label>
+                        )}
                       </article>)}
                     </div>
                   </div>
@@ -6940,8 +9059,12 @@ function App() {
                     <label><span>目标长度</span><input type="number" min="50" max="3000" step="50" value={draftTargetLength} onChange={(event) => setDraftTargetLength(Math.max(50, Math.min(3000, Number(event.target.value) || 50)))} /></label>
                     <label><span>必须发生</span><textarea value={draftMustInclude} placeholder="必须出现的行动、信息或结果" onChange={(event) => setDraftMustInclude(event.target.value)} /></label>
                     <label><span>禁止发生</span><textarea value={draftMustAvoid} placeholder="不能出现的情节、信息或表达" onChange={(event) => setDraftMustAvoid(event.target.value)} /></label>
+                    <label><span>视角人物</span><input value={draftPov} placeholder="留空沿用当前章节视角" onChange={(event) => setDraftPov(event.target.value)} /></label>
+                    <label><span>退出节拍</span><input value={draftEndingBeat} placeholder="停在哪一个动作或画面上，不总结" onChange={(event) => setDraftEndingBeat(event.target.value)} /></label>
+                    <label><span>暂时隐瞒</span><textarea value={draftWithhold} placeholder="这一场先不让读者知道什么" onChange={(event) => setDraftWithhold(event.target.value)} /></label>
                     <label><span>表达要求</span><textarea value={draftStyleInstruction} placeholder="例如减少解释，多用动作推进" onChange={(event) => setDraftStyleInstruction(event.target.value)} /></label>
                     <label className="draft-fact-toggle"><span><strong>不可新增正典事实</strong><small>新增内容仍会列入校验</small></span><span className="switch-control"><input type="checkbox" checked={draftNoNewFacts} onChange={(event) => setDraftNoNewFacts(event.target.checked)} /><span className="switch-track" aria-hidden="true"><span /></span></span></label>
+                    <p className="style-profile-notice">生成时会自动遵守“去 AI 腔写作契约”，并按本书的文风禁区做本地检查；结果会标在候选卡片里。</p>
                     <button className="draft-generate" onClick={() => void runDraftGeneration()}><Sparkles size={14} />{draftBusy ? '停止生成' : '生成候选方案'}</button>
                   </section>
                   <div className="draft-candidate-list">
@@ -6959,9 +9082,11 @@ function App() {
                         <div className={candidate.validation.newFacts.length ? 'warning' : ''}><strong>新增事实</strong><p>{candidate.validation.newFacts.join('；') || '未发现'}</p></div>
                         <div className={candidate.validation.conflicts.length || candidate.validation.overlapWarnings.length ? 'danger' : ''}><strong>风险与冲突</strong><p>{[...candidate.validation.conflicts, ...candidate.validation.overlapWarnings].join('；') || '未发现'}</p></div>
                         <div><strong>表达检查</strong><p>{candidate.validation.styleNotes.join('；') || '未说明'}</p></div>
+                        <div className={candidate.validation.styleWarnings?.length ? 'warning' : ''}><strong>文风自然度</strong><p>{candidate.validation.styleWarnings?.join('；') || '未发现明显 AI 腔'}</p></div>
+                        <div><strong>文风数据</strong><p>{draftStyleSummary(candidate)}</p></div>
                       </div>
                       {candidate.status === 'candidate' && <footer><button className="preview" disabled={acceptingDraftId === candidate.id} onClick={() => void showDraftPreview(candidate)}><Eye size={13} />正文预览</button><button className={draftCompareIds.includes(candidate.id) ? 'compare active' : 'compare'} disabled={!draftCompareIds.includes(candidate.id) && draftCompareIds.length >= 2} onClick={() => setDraftCompareIds((current) => current.includes(candidate.id) ? current.filter((id) => id !== candidate.id) : [...current, candidate.id].slice(-2))}>对比</button><button disabled={acceptingDraftId === candidate.id} onClick={() => void rejectDraftCandidate(candidate)}>拒绝</button><button disabled={acceptingDraftId === candidate.id} className="accept" onClick={() => void acceptDraftCandidate(candidate)}>{acceptingDraftId === candidate.id ? '写入中…' : '接受并写入'}</button></footer>}
-                      {candidate.status === 'accepted' && <footer><span>已写入正文</span><button disabled={acceptingDraftId === candidate.id} onClick={() => void acceptDraftCandidate(candidate, true)}>{acceptingDraftId === candidate.id ? '写入中…' : '重新写入'}</button></footer>}
+                      {candidate.status === 'accepted' && <footer><span>已写入正文</span><button disabled={acceptingDraftId === candidate.id || candidate.chapterId !== activeChapter.id} onClick={() => void learnFromCandidateEdit(candidate)}>学习手改</button><button disabled={acceptingDraftId === candidate.id} onClick={() => void acceptDraftCandidate(candidate, true)}>{acceptingDraftId === candidate.id ? '写入中…' : '重新写入'}</button></footer>}
                     </article>)}
                   </div>
                 </div>
@@ -6998,6 +9123,7 @@ function App() {
                     {issue.suggestion && <div className="review-suggestion"><strong>建议</strong>{issue.suggestion}</div>}
                     {issue.evidence.length > 0 && <div className="review-evidence"><strong>原文证据</strong>{issue.evidence.map((evidence, index) => <button key={`${evidence.chapterId}-${evidence.nodeId}-${index}`} onClick={() => void openAnswerCitation({ evidenceId: `${issue.id}-${index}`, chapterId: evidence.chapterId, chapterTitle: evidence.chapterTitle, nodeId: evidence.nodeId, quote: evidence.quote, claim: issue.detail })}><span>{evidence.chapterTitle}</span><q>{evidence.quote}</q></button>)}</div>}
                     <footer>
+                      {issue.category === 'prose' && issue.evidence.length > 0 && <button className="rewrite" onClick={() => void rewriteReviewIssue(issue)}>按建议改写</button>}
                       {issue.status === 'open' ? <><button onClick={() => void updateReviewIssueStatus(issue, 'dismissed')}>忽略</button><button onClick={() => void updateReviewIssueStatus(issue, 'confirmed')}>确认问题</button><button className="resolve" onClick={() => void updateReviewIssueStatus(issue, 'resolved')}>已处理</button></> : <button onClick={() => void updateReviewIssueStatus(issue, 'open')}>重新打开</button>}
                     </footer>
                   </article>)}
@@ -7061,6 +9187,15 @@ function App() {
                       <span>字里助手</span>
                       {message.status === 'pending' ? <p>{message.content || '正在处理...'}</p> : message.status === 'failed' || message.status === 'cancelled' ? <>{message.content && <p>{message.content}</p>}<div className="agent-error"><p>{message.error || '本次请求未完成'}</p><button onClick={() => void runAgentConversation(requestMessage?.content ?? '')}>重试</button></div></> : <>
                         <p>{sanitizeAgentReplyForDisplay(turn?.reply ?? message.content)}</p>
+                        {turn?.actionStatus === 'pending' && turn.pendingActions?.length ? <AgentActionReview
+                          key={`${message.id}:pending`}
+                          actions={turn.pendingActions}
+                          previews={turn.actionPreviews}
+                          busy={agentBusy || executingActionMessageId === message.id}
+                          onConfirm={(chosen) => void confirmAgentActions(message, chosen)}
+                          onCancel={() => void cancelAgentActions(message)}
+                        /> : null}
+                        {turn?.actionStatus === 'cancelled' ? <div className="agent-action-cancelled">已取消本次操作，作品没有变化。</div> : null}
                         {turn?.reasoning && <details className="agent-reasoning">
                           <summary><BrainCircuit size={14} /><span>推理过程</span><small>展开</small></summary>
                           <pre>{turn.reasoning}</pre>
@@ -7071,6 +9206,18 @@ function App() {
                             <span>{tool.label}</span>
                             <small>{tool.status === 'awaiting-confirmation' ? '待确认' : tool.status === 'failed' ? '失败' : tool.status === 'rejected' ? '已否决' : tool.status === 'undone' ? '已撤销' : '完成'}</small>
                           </div>)}
+                        </div> : null}
+                        {turn?.actionBatch ? <div className={`agent-action-batch ${turn.actionBatch.status}`}>
+                          {turn.actionBatch.status === 'applied'
+                            ? (turn.actionBatch.undoable
+                              ? <>
+                                <span>这次批量修改已记录，可以一键恢复到修改前。</span>
+                                <button disabled={agentBusy || undoingBatchMessageId !== null} onClick={() => void undoAgentActionBatch(message)}>
+                                  <RotateCcw size={12} />{undoingBatchMessageId === message.id ? '撤销中…' : '撤销本次批量修改'}
+                                </button>
+                              </>
+                              : <span>这次操作包含新建或删除章节，无法一键撤销；请使用回收站或版本历史恢复。</span>)
+                            : <span>本次批量修改已撤销，已恢复到修改前。</span>}
                         </div> : null}
                         {turn?.retrieval && <details className="agent-context-inspector">
                           <summary>
@@ -7126,10 +9273,10 @@ function App() {
                           return <section className={`agent-draft ${candidate.status}`} key={candidate.id}>
                             <header><div><strong>{candidate.title}</strong><span>{draftModeLabel(candidate)}</span></div><small>{candidate.text.length} 字</small></header>
                             <p>{candidate.text}</p>
-                            {(candidate.validation.newFacts.length > 0 || candidate.validation.conflicts.length > 0 || candidate.validation.overlapWarnings.length > 0) && <div className="agent-draft-warnings">
-                              {[...candidate.validation.newFacts.map((item) => `新增事实：${item}`), ...candidate.validation.conflicts, ...candidate.validation.overlapWarnings].map((item) => <span key={item}>{item}</span>)}
+                            {(candidate.validation.newFacts.length > 0 || candidate.validation.conflicts.length > 0 || candidate.validation.overlapWarnings.length > 0 || (candidate.validation.styleWarnings?.length ?? 0) > 0) && <div className="agent-draft-warnings">
+                              {[...candidate.validation.newFacts.map((item) => `新增事实：${item}`), ...candidate.validation.conflicts, ...candidate.validation.overlapWarnings, ...(candidate.validation.styleWarnings ?? [])].map((item) => <span key={item}>{item}</span>)}
                             </div>}
-                            {candidate.status === 'candidate' ? <footer><button className="preview" disabled={acceptingDraftId === candidate.id} onClick={() => void showDraftPreview(candidate)}><Eye size={13} />正文预览</button><button disabled={acceptingDraftId === candidate.id} onClick={() => void rejectDraftCandidate(candidate)}>放弃</button><button disabled={acceptingDraftId === candidate.id} className="accept" onClick={() => void acceptDraftCandidate(candidate)}>{acceptingDraftId === candidate.id ? '写入中…' : '确认写入'}</button></footer> : candidate.status === 'accepted' ? <footer><span>已写入正文</span>{transaction?.status === 'applied' && <button className="undo" disabled={acceptingDraftId === candidate.id} onClick={() => void undoAgentDraftAction(candidate)}><RotateCcw size={12} />撤销写入</button>}<button disabled={acceptingDraftId === candidate.id} onClick={() => void acceptDraftCandidate(candidate, true)}>{acceptingDraftId === candidate.id ? '写入中…' : '重新写入'}</button></footer> : <footer><span>已放弃</span></footer>}
+                            {candidate.status === 'candidate' ? <footer><button className="preview" disabled={acceptingDraftId === candidate.id} onClick={() => void showDraftPreview(candidate)}><Eye size={13} />正文预览</button><button disabled={acceptingDraftId === candidate.id} onClick={() => void rejectDraftCandidate(candidate)}>放弃</button><button disabled={acceptingDraftId === candidate.id} className="accept" onClick={() => void acceptDraftCandidate(candidate)}>{acceptingDraftId === candidate.id ? '写入中…' : '确认写入'}</button></footer> : candidate.status === 'accepted' ? <footer><span>已写入正文</span><button disabled={acceptingDraftId === candidate.id || candidate.chapterId !== activeChapter.id} onClick={() => void learnFromCandidateEdit(candidate)}>学习手改</button>{transaction?.status === 'applied' && <button className="undo" disabled={acceptingDraftId === candidate.id} onClick={() => void undoAgentDraftAction(candidate)}><RotateCcw size={12} />撤销写入</button>}<button disabled={acceptingDraftId === candidate.id} onClick={() => void acceptDraftCandidate(candidate, true)}>{acceptingDraftId === candidate.id ? '写入中…' : '重新写入'}</button></footer> : <footer><span>已放弃</span></footer>}
                           </section>
                         })}
                       </>}
@@ -7156,8 +9303,9 @@ function App() {
                   </div>}
                   <textarea
                     value={agentInput}
-                    placeholder="和字里助手讨论作品…"
+                    placeholder="和字里助手讨论作品…（可直接 Ctrl+V 粘贴图片）"
                     onContextMenu={openInputContextMenu}
+                    onPaste={pasteAgentImages}
                     onChange={(event) => setAgentInput(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -7171,7 +9319,7 @@ function App() {
                   <div className="agent-composer-actions">
                     <div>
                       <button className={agentSelection.text ? 'active' : ''} title="使用当前正文选区" onClick={captureAgentSelection}><LocateFixed size={15} /></button>
-                      <button title="上传图片" onClick={() => agentImageInput.current?.click()}><ImagePlus size={15} /></button>
+                      <button title="上传图片（也可在输入框直接粘贴）" onClick={() => agentImageInput.current?.click()}><ImagePlus size={15} /></button>
                       <button className={agentImagePickerOpen ? 'active' : ''} title="从图片素材选择" onClick={() => void openAgentImagePicker()}><Images size={15} /></button>
                       {agentMessages.length > 0 && <button title="清空当前对话内容" onClick={() => void clearAgentConversation()}><Trash2 size={15} /></button>}
                     </div>
@@ -7323,8 +9471,11 @@ function App() {
               <button className="icon-button small" onClick={() => void closeUtilityPanel('references')} title="关闭参考文本"><X size={17} /></button>
             </div>
             <div className="asset-toolbar reference-toolbar">
-              <button disabled={referenceBusy} onClick={() => referenceInput.current?.click()}><Plus size={15} />{referenceBusy ? '正在保存…' : '导入参考文本'}</button>
-              <button disabled={styleBusy || referenceTexts.length === 0} onClick={() => void runStyleAnalysis()}><Sparkles size={14} />{styleBusy ? '停止分析' : '分析风格'}</button>
+              <button disabled={referenceBusy} onClick={() => referenceInput.current?.click()}>{referenceBusy ? '正在保存…' : '导入参考文本'}</button>
+              <div className="reference-toolbar-row">
+                <button disabled={styleBusy || referenceTexts.length === 0} onClick={() => void runStyleAnalysis()}>{styleBusy ? '停止分析' : '分析风格'}</button>
+                <button disabled={!project.chapters.some((chapter) => chapter.plainText.trim())} onClick={() => void runAuthorVoiceAnalysis()}>提取我的声音</button>
+              </div>
             </div>
             <div className="reference-view-tabs">
               <button className={referenceView === 'files' ? 'active' : ''} onClick={() => setReferenceView('files')}>参考文件</button>
@@ -7351,25 +9502,65 @@ function App() {
                 </article>
               ))}
             </div> : <div className="style-profile-pane">
-              {styleProfile.sourceReferenceIds.length === 0 && <p className="memory-empty">分析参考文本后会生成可编辑的抽象风格档案。</p>}
-              {styleProfile.sourceReferenceIds.length > 0 && <>
-                <p className="style-profile-notice">仅描述抽象特征，不复制特定作者表达。候选文本会执行长连续重合检查。</p>
-                {([
-                  ['sentenceRhythm', '句长与节奏'],
-                  ['paragraphRhythm', '段落节奏'],
-                  ['compositionBalance', '描写构成'],
-                  ['pointOfView', '叙事视角'],
-                  ['narrativeDistance', '视角距离'],
-                  ['lexicalDensity', '词汇密度'],
-                  ['rhetoricIntensity', '修辞强度'],
-                  ['emotionalTone', '情绪基调'],
-                  ['revelationPattern', '信息揭示'],
-                  ['chapterEndingPattern', '章节结尾'],
-                  ['editableGuidance', '写作指导'],
-                ] as const).map(([field, label]) => <label key={field}><span>{label}</span><textarea value={styleProfile[field]} onChange={(event) => updateStyleProfileField(field, event.target.value)} onBlur={() => void commitStyleProfile()} /></label>)}
-              </>}
+              <p className="style-profile-notice">风格档案只提取抽象特征，不复制特定作者表达。下面的“我的声音”和“文风禁区”会直接进入候选正文的生成提示词。</p>
+              <div className="style-profile-notice">
+                <strong>我的声音</strong>
+                <p>{formatVoiceFingerprint(styleProfile.voiceFingerprint) || '还没有提取。点击上方“提取我的声音”，会统计你自己的句长、对白比例、段长和常用句首。'}</p>
+              </div>
+              <label><span>作者声音样本（每段之间空一行，最多 8 段）</span><textarea value={styleDraft.voiceSamples} onChange={(event) => setStyleDraft((current) => ({ ...current, voiceSamples: event.target.value }))} onBlur={() => void commitStyleDraft()} placeholder="粘贴 2—5 段你满意、希望 AI 学习的正文" /></label>
+              <div className="style-profile-notice">
+                <strong>去 AI 腔</strong>
+                <p>禁用词句与写法会作为负向约束注入生成提示词，并在候选卡里做本地检查。</p>
+              </div>
+              <label><span>禁用词句（一行一条，留空使用内置清单）</span><textarea value={styleDraft.bannedPhrases} onChange={(event) => setStyleDraft((current) => ({ ...current, bannedPhrases: event.target.value }))} onBlur={() => void commitStyleDraft()} placeholder="五味杂陈、不禁、仿佛整个世界……" /></label>
+              <label><span>禁用写法（一行一条，留空使用内置清单）</span><textarea value={styleDraft.bannedPatterns} onChange={(event) => setStyleDraft((current) => ({ ...current, bannedPatterns: event.target.value }))} onBlur={() => void commitStyleDraft()} placeholder="段尾总结、三段排比、万能比喻、直接命名情绪……" /></label>
+              <label><span>补充文风禁区</span><textarea value={styleDraft.styleTaboos} onChange={(event) => setStyleDraft((current) => ({ ...current, styleTaboos: event.target.value }))} onBlur={() => void commitStyleDraft()} placeholder="例如：不要每段都收束；不要用天气映衬心情；对白不要解释设定" /></label>
+              <div className="style-profile-notice">
+                <strong>从手改中学到的</strong>
+                <p>只保存在当前作品。每本书单独学习，不会影响其他小说。</p>
+                {styleProfile.editSamples.length > 0 && <p>最近一次：{styleProfile.editSamples[0].signals.join('；') || '未识别出明确规则，只保存了前后对照'}</p>}
+              </div>
+              <label><span>本书偏好（一行一条，可手动修改）</span><textarea value={styleDraft.learnedPreferences} onChange={(event) => setStyleDraft((current) => ({ ...current, learnedPreferences: event.target.value }))} onBlur={() => void commitStyleDraft()} placeholder="例如：句子改短、减少副词、删掉段尾总结" /></label>
+              {styleProfile.editSamples.length > 0 && <div className="style-profile-notice">
+                <p>已保存 {styleProfile.editSamples.length} 组手改前后对照，生成时会参考最近一次。</p>
+                <button className="style-sample-clear" onClick={() => void clearEditSamples()}>清空手改样本</button>
+              </div>}
+              <div className="style-profile-notice">
+                <strong>参考文本的抽象风格</strong>
+                <p>{styleProfile.sourceReferenceIds.length > 0 ? '已从参考文本提取，可继续手动修改。' : '尚未分析参考文本；以下字段也可以手动填写。'}</p>
+              </div>
+              {([
+                ['sentenceRhythm', '句长与节奏'],
+                ['paragraphRhythm', '段落节奏'],
+                ['compositionBalance', '描写构成'],
+                ['pointOfView', '叙事视角'],
+                ['narrativeDistance', '视角距离'],
+                ['lexicalDensity', '词汇密度'],
+                ['rhetoricIntensity', '修辞强度'],
+                ['emotionalTone', '情绪基调'],
+                ['revelationPattern', '信息揭示'],
+                ['chapterEndingPattern', '章节结尾'],
+                ['editableGuidance', '写作指导'],
+              ] as const).map(([field, label]) => <label key={field}><span>{label}</span><textarea value={styleProfile[field]} onChange={(event) => updateStyleProfileField(field, event.target.value)} onBlur={() => void commitStyleProfile()} /></label>)}
             </div>}
           </aside>
+        )}
+
+        {globalSearchOpen && !focusMode && (
+          <GlobalSearchPanel
+            project={project}
+            memories={projectMemoryBundles}
+            references={referenceTexts}
+            attachments={attachments}
+            isClosing={closingUtilityPanel === 'search'}
+            suppressEntry={suppressPanelEntry === 'search'}
+            onClose={() => void closeUtilityPanel('search')}
+            onJumpToChapter={(chapterId, needle) => jumpToSearchMatch(chapterId, needle)}
+            onOpenScene={(sceneId) => { if (sceneId !== project.activeSceneId || !scenePanelOpen) openScene(sceneId) }}
+            onOpenMemory={(title) => openSearchMemory(title)}
+            onOpenReferences={() => void openReferences()}
+            onOpenAttachments={() => void openAttachments()}
+          />
         )}
       </section>
 
@@ -7519,6 +9710,8 @@ function App() {
                 <dl>
                   <dt>目标</dt><dd>{candidate.validation.goalCoverage || '未说明'}</dd>
                   <dt>新增事实</dt><dd>{candidate.validation.newFacts.join('；') || '未发现'}</dd>
+                  <dt>文风</dt><dd>{candidate.validation.styleWarnings?.join('；') || '未发现明显 AI 腔'}</dd>
+                  <dt>文风数据</dt><dd>{draftStyleSummary(candidate)}</dd>
                   <dt>风险</dt><dd>{[...candidate.validation.conflicts, ...candidate.validation.overlapWarnings].join('；') || '未发现'}</dd>
                 </dl>
                 <footer><button onClick={() => { setDraftComparisonOpen(false); void showDraftPreview(candidate) }}><Eye size={13} />正文预览</button><button className="accept" onClick={() => { setDraftComparisonOpen(false); void acceptDraftCandidate(candidate) }}>选择并写入</button></footer>
@@ -7617,6 +9810,179 @@ function App() {
         )
       })()}
 
+      {statsOpen && (
+        <div className="modal-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setStatsOpen(false)
+        }}>
+          <section className="stats-modal" role="dialog" aria-modal="true" aria-label="写作统计">
+            <header>
+              <div><strong>写作统计</strong><small>只统计启用后新增的字数，不影响正文</small></div>
+              <button className="icon-button" onClick={() => setStatsOpen(false)} title="关闭写作统计" aria-label="关闭写作统计"><X size={18} /></button>
+            </header>
+            {statsLoading ? <p className="memory-empty">正在统计…</p> : (
+              <div className="stats-content">
+                <div className="stats-cards">
+                  <div><small>今日新增</small><strong>{writingStats.todayAdded.toLocaleString('zh-CN')}</strong><span>字</span></div>
+                  <div><small>本周</small><strong>{writingStats.weekAdded.toLocaleString('zh-CN')}</strong><span>字</span></div>
+                  <div><small>近 30 天</small><strong>{writingStats.monthAdded.toLocaleString('zh-CN')}</strong><span>字</span></div>
+                  <div><small>连续写作</small><strong>{writingStats.streakDays}</strong><span>天</span></div>
+                </div>
+
+                <div className="stats-chart">
+                  <div className="stats-chart-head">
+                    <span>近 30 天日更</span>
+                    <small>{writingStats.sessionCount} 次会话 · 累计 {writingStats.totalAdded.toLocaleString('zh-CN')} 字</small>
+                  </div>
+                  {(() => {
+                    const max = Math.max(1, ...writingStats.days.map((day) => day.added))
+                    return (
+                      <div className="stats-bars">
+                        {writingStats.days.map((day) => (
+                          <div key={day.date} className={`stats-bar ${day.added > 0 ? 'has-words' : ''}`} title={`${day.date} · ${day.added} 字${day.activeMs > 0 ? ` · ${Math.round(day.activeMs / 60000)} 分钟` : ''}`}>
+                            <span style={{ height: `${Math.max(day.added > 0 ? 6 : 0, Math.round((day.added / max) * 100))}%` }} />
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
+                  <div className="stats-axis">
+                    <span>{writingStats.days[0]?.date.slice(5) ?? ''}</span>
+                    <span>{writingStats.days[writingStats.days.length - 1]?.date.slice(5) ?? ''}</span>
+                  </div>
+                </div>
+
+                {preferences.wordGoalEnabled && (
+                  <div className="stats-goal">
+                    <div><strong>本章目标</strong><span>{wordCount.toLocaleString('zh-CN')} / {preferences.wordGoal.toLocaleString('zh-CN')}</span></div>
+                    <div className="stats-goal-bar"><i style={{ width: `${Math.min(100, Math.round((wordCount / Math.max(1, preferences.wordGoal)) * 100))}%` }} /></div>
+                  </div>
+                )}
+
+                {writingStats.chapterTotals.length > 0 ? (
+                  <div className="stats-chapters">
+                    <div className="stats-section-title">各章累计新增</div>
+                    <ul>
+                      {writingStats.chapterTotals.slice(0, 8).map((total) => (
+                        <li key={total.chapterId}>
+                          <span>{project.chapters.find((chapter) => chapter.id === total.chapterId)?.title ?? '已删除章节'}</span>
+                          <small>{total.added.toLocaleString('zh-CN')} 字{total.activeMs >= 60000 ? ` · ${Math.round(total.activeMs / 60000)} 分钟` : ''}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : <p className="memory-empty">还没有统计数据。开始写作后，这里会记录每日新增与各章耗时。</p>}
+
+                <div className="stats-footer">
+                  <span>会话超 30 分钟无操作会重新计时，仅用于估算写作时长。</span>
+                  <button className="danger" disabled={statsClearing} onClick={() => void clearWritingStats()}>{statsClearing ? '清空中…' : '清空统计'}</button>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {complianceOpen && (
+        <div className="modal-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setComplianceOpen(false)
+        }}>
+          <section className="compliance-modal" role="dialog" aria-modal="true" aria-label="合规自查">
+            <header>
+              <div><strong>合规自查</strong><small>纯本地扫描，不联网；结果仅供投稿/上架前参考，不替代平台审核</small></div>
+              <button className="icon-button" onClick={() => setComplianceOpen(false)} title="关闭合规自查" aria-label="关闭合规自查"><X size={18} /></button>
+            </header>
+            <div className="compliance-toolbar">
+              <div className="relationship-scope-group" role="group" aria-label="检测范围">
+                <button className={complianceScope === 'book' ? 'active' : ''} onClick={() => { setComplianceScope('book'); runComplianceScan('book') }}>全书</button>
+                <button className={complianceScope === 'chapter' ? 'active' : ''} onClick={() => { setComplianceScope('chapter'); runComplianceScan('chapter') }}>当前章</button>
+              </div>
+              <button className="compliance-rescan" onClick={() => runComplianceScan()}>重新检测</button>
+            </div>
+            <details className="compliance-words">
+              <summary>自定义词表（每行或逗号分隔，已配置 {parseComplianceWords(complianceWordsText).length} 条）</summary>
+              <textarea
+                value={complianceWordsText}
+                onChange={(event) => setComplianceWordsText(event.target.value)}
+                onBlur={() => runComplianceScan()}
+                placeholder="每行一个词，例如：平台明确禁止的特定表述"
+              />
+            </details>
+            {complianceReport && (
+              <div className="compliance-result">
+                <div className="compliance-summary">
+                  <span className="severity-high">高风险 <strong>{complianceReport.high}</strong></span>
+                  <span className="severity-warn">警告 <strong>{complianceReport.warn}</strong></span>
+                  <span className="severity-info">提示 <strong>{complianceReport.info}</strong></span>
+                  <span>扫描 {complianceReport.scannedChapters} 章</span>
+                </div>
+                {complianceReport.totalHits === 0 ? (
+                  <p className="memory-empty">没有命中内置规则或自定义词。仍建议按目标平台规则人工复核一遍。</p>
+                ) : (
+                  <ul className="compliance-hits">
+                    {complianceReport.hits.slice(0, 120).map((hit, index) => (
+                      <li key={`${hit.chapterId}-${hit.ruleId}-${hit.index}-${index}`} className={`severity-${hit.severity}`}>
+                        <div>
+                          <strong>{hit.match}</strong>
+                          <small>{COMPLIANCE_SEVERITY_LABELS[hit.severity]} · {COMPLIANCE_CATEGORY_LABELS[hit.category]} · {hit.chapterTitle}</small>
+                          <button onClick={() => { void openChapter(hit.chapterId); setComplianceOpen(false) }}>定位</button>
+                        </div>
+                        <p>{hit.context}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {complianceReport.truncated && <p className="compliance-note">命中过多，仅显示前 400 条，建议把范围缩小到当前章再看。</p>}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {commentsOpen && (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommentsOpen(false) }}>
+          <section className="comments-modal" role="dialog" aria-modal="true" aria-label="读者批注">
+            <header>
+              <div>
+                <strong>读者批注</strong>
+                <small>{chapterComments.length} 条 · 未解决 {chapterComments.filter((comment) => !comment.resolved).length} 条 · 定位会把原句填进查找框</small>
+              </div>
+              <button className="icon-button" onClick={() => setCommentsOpen(false)} title="关闭批注" aria-label="关闭批注"><X size={18} /></button>
+            </header>
+            <div className="comments-toolbar">
+              <button onClick={() => commentsFileRef.current?.click()}>导入批注文件</button>
+              {chapterComments.length > 0 && <button className="comments-clear" onClick={() => void clearComments()}>清空批注</button>}
+            </div>
+            {chapterComments.length === 0 ? (
+              <p className="memory-empty">当前作品还没有批注。先把分享稿发给读者，再导入对方回传的 .zilicomments.json。</p>
+            ) : (
+              <ul className="comment-list">
+                {chapterComments.map((comment) => {
+                  const chapter = project.chapters.find((item) => item.id === comment.chapterId)
+                  const located = commentLocated(comment)
+                  return (
+                    <li key={comment.id} className={`${comment.resolved ? 'is-resolved' : ''} ${located ? '' : 'is-unlocated'}`}>
+                      <div className="comment-meta">
+                        <strong>{chapter?.title ?? '未知章节'}</strong>
+                        <small>{comment.author} · {new Date(comment.createdAt).toLocaleDateString()}</small>
+                        {!located && <span className="comment-badge">未定位</span>}
+                        {comment.resolved && <span className="comment-badge resolved">已解决</span>}
+                      </div>
+                      {comment.quote && <blockquote>{comment.quote}</blockquote>}
+                      <p>{comment.comment}</p>
+                      <div className="comment-actions">
+                        <button onClick={() => locateComment(comment)} disabled={!chapter}>定位</button>
+                        <button onClick={() => void toggleCommentResolved(comment)}>{comment.resolved ? '标记未解决' : '标记已解决'}</button>
+                        <button onClick={() => void removeComment(comment)}>删除</button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+      )}
+
       {exportOpen && (
         <div className="modal-backdrop" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !exportBusy) setExportOpen(false)
@@ -7641,9 +10007,55 @@ function App() {
               <button onClick={() => void exportDocument('md')} disabled={Boolean(exportBusy) || !exportReport || exportReport.missingResources > 0}><strong>Markdown</strong><span>{exportBusy === 'md' ? '正在生成…' : '自包含图片'}</span></button>
               <button onClick={() => void exportDocument('docx')} disabled={Boolean(exportBusy) || !exportReport || exportReport.missingResources > 0}><strong>DOCX</strong><span>{exportBusy === 'docx' ? '正在生成…' : 'Word 文档'}</span></button>
               <button onClick={() => void exportDocument('epub')} disabled={Boolean(exportBusy) || !exportReport || exportReport.missingResources > 0}><strong>EPUB</strong><span>{exportBusy === 'epub' ? '正在生成…' : '电子书'}</span></button>
+              <button onClick={() => void exportPdfPreview()} disabled={Boolean(exportBusy) || !exportReport || exportReport.missingResources > 0}><strong>PDF</strong><span>{exportBusy === 'pdf' ? '正在准备…' : '打印 / 另存为 PDF'}</span></button>
+              <button className="export-compliance" onClick={() => { setExportOpen(false); openCompliance() }}><strong>合规自查</strong><span>本地扫描敏感词</span></button>
+              <button onClick={exportShareDraft}><strong>分享稿</strong><span>只读 HTML，带段落锚点</span></button>
+              <button onClick={() => commentsFileRef.current?.click()}><strong>导入批注</strong><span>.zilicomments.json · 已有 {chapterComments.length} 条</span></button>
             </div>
           </section>
         </div>
+      )}
+
+      {pdfPreviewOpen && createPortal(
+        <div className="pdf-preview-root">
+          <div className="pdf-preview-toolbar">
+            <span>PDF 预览 · 打印对话框里选择「另存为 PDF」或「Microsoft Print to PDF」</span>
+            <button onClick={() => void printPdf()}><Printer size={15} />打印 / 另存为 PDF</button>
+            <button className="icon-button" onClick={closePdfPreview} title="关闭预览" aria-label="关闭预览"><X size={16} /></button>
+          </div>
+          <div className="pdf-preview-book" aria-label={`${project.title} PDF 预览`}>
+            <div className="pdf-title-page">
+              <h1>{project.title}</h1>
+              <p>{project.volumes.length > 1 ? `${project.volumes.length} 卷 · ` : ''}{project.chapters.length} 章</p>
+            </div>
+            <div className="pdf-toc-section">
+              <h2>目录</h2>
+              {project.volumes.map((volume) => (
+                <div className="pdf-toc-volume" key={volume.id}>
+                  <h3>{volume.title}</h3>
+                  <ol>
+                    {project.chapters.filter((chapter) => chapter.volumeId === volume.id).map((chapter) => (
+                      <li key={chapter.id}>{chapter.title}</li>
+                    ))}
+                  </ol>
+                </div>
+              ))}
+            </div>
+            {!project.chapters.some((chapter) => chapter.plainText.trim()) && <p className="pdf-preview-empty">当前作品还没有正文。</p>}
+            {project.volumes.map((volume) => (
+              <div className="pdf-volume-section" key={volume.id}>
+                <h2 className="pdf-volume-title">{volume.title}</h2>
+                {project.chapters.filter((chapter) => chapter.volumeId === volume.id).map((chapter) => (
+                  <div className="pdf-chapter" key={chapter.id}>
+                    <h3>{chapter.title}</h3>
+                    <div className="pdf-chapter-content" dangerouslySetInnerHTML={{ __html: preparePdfChapterHtml(chapter.content) }} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>,
+        document.body,
       )}
 
       {rewardOpen && (
@@ -7997,6 +10409,91 @@ function App() {
                       <small>秒；分析本章和 Agent 默认最多运行 300 秒</small>
                     </span>
                   </label>
+                  <div className="ai-setting-field ai-task-models">
+                    <span>
+                      <strong>按任务指定模型</strong>
+                      <small>默认跟随全局；也可以让单个任务走内置服务或你自己的 API（端点与模型分开指定）</small>
+                    </span>
+                    <div className="ai-task-model-compact">
+                      <div className="ai-task-model-pair">
+                        <WheelSelect
+                          ariaLabel="选择任务"
+                          className="ai-task-model-pick"
+                          value={taskModelTask}
+                          options={AI_TASK_MODEL_TARGETS.map(([taskType, label]) => ({ value: taskType, label }))}
+                          onChange={(value) => setTaskModelTask(value)}
+                        />
+                        <WheelSelect
+                          ariaLabel="该任务的接口来源"
+                          className="ai-task-model-pick"
+                          value={aiSettings.taskRoutes[taskModelTask]?.providerId ?? ''}
+                          options={[
+                            { value: '', label: '跟随全局' },
+                            { value: 'builtin-agnes', label: '内置服务' },
+                            { value: 'openai-compatible', label: '用户 API' },
+                          ]}
+                          onChange={(value) => {
+                            if (!value) {
+                              updateTaskRoute(taskModelTask, null)
+                              return
+                            }
+                            if (value === 'builtin-agnes') {
+                              updateTaskRoute(taskModelTask, { providerId: 'builtin-agnes', baseUrl: '', model: '' })
+                              return
+                            }
+                            updateTaskRoute(taskModelTask, {
+                              providerId: 'openai-compatible',
+                              baseUrl: defaultCustomBaseUrl,
+                              model: taskModelChoices[0] ?? '',
+                            })
+                          }}
+                        />
+                      </div>
+                      {aiSettings.taskRoutes[taskModelTask]?.providerId === 'openai-compatible' && (
+                        <div className="ai-task-model-route">
+                          <div className="ai-task-model-pair">
+                            <WheelSelect
+                              ariaLabel="该任务使用的模型"
+                              className="ai-task-model-pick"
+                              value={aiSettings.taskRoutes[taskModelTask]?.model ?? ''}
+                              options={(taskModelChoices.length > 0 ? taskModelChoices : ['']).map((model) => ({ value: model, label: model || '（无可用模型）' }))}
+                              onChange={(model) => {
+                                const route = aiSettings.taskRoutes[taskModelTask]
+                                if (!route) return
+                                updateTaskRoute(taskModelTask, { ...route, model })
+                              }}
+                            />
+                            <WheelSelect
+                              ariaLabel="该任务使用的接口地址"
+                              className="ai-task-model-pick"
+                              value={aiSettings.taskRoutes[taskModelTask]?.baseUrl ?? ''}
+                              options={(endpointChoices.length > 0 ? endpointChoices : ['']).map((endpoint) => ({ value: endpoint, label: endpoint || '（先配置一个 API 地址）' }))}
+                              onChange={(baseUrl) => {
+                                const route = aiSettings.taskRoutes[taskModelTask]
+                                if (!route) return
+                                updateTaskRoute(taskModelTask, { ...route, baseUrl })
+                              }}
+                            />
+                          </div>
+                          {!endpointChoices.length && <small className="ai-task-model-hint">还没有自定义 API 地址，先在「AI 服务 → 用户 API」里配置并测试连接。</small>}
+                        </div>
+                      )}
+                      {AI_TASK_MODEL_TARGETS.some(([taskType]) => aiSettings.taskRoutes[taskType]) && (
+                        <div className="ai-task-model-chips">
+                          {AI_TASK_MODEL_TARGETS.filter(([taskType]) => aiSettings.taskRoutes[taskType]).map(([taskType, label]) => {
+                            const route = aiSettings.taskRoutes[taskType]
+                            return (
+                              <span className="ai-task-model-chip" key={taskType}>
+                                {label} · {route.providerId === 'builtin-agnes' ? '内置服务' : route.model}
+                                <button title={`清除 ${label} 的接口设置`} onClick={() => updateTaskRoute(taskType, null)}>×</button>
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {!isBuiltinAgnesProvider(aiSettings) && taskModelChoices.length <= 1 && <small className="ai-task-model-hint">还没有可选的模型列表，先在「AI 服务」里点「获取模型列表」或测试连接。</small>}
+                    </div>
+                  </div>
                   <div className="ai-setting-field ai-permission-setting">
                     <span><strong>作品数据权限</strong><small>只影响当前作品；关闭后对应资料不会发送</small></span>
                     <div className="ai-permission-options">
@@ -8009,6 +10506,18 @@ function App() {
                         ['deletedChapters', '回收站章节（仅明确请求时）'],
                         ['referenceTexts', '参考文本（仅明确请求时）'],
                         ['webResearch', '联网检索（仅明确请求时）'],
+                      ] as Array<[keyof AiDataPermissions, string]>).map(([field, label]) => <label key={field}>
+                        <input type="checkbox" checked={aiDataPermissions[field]} onChange={(event) => updateAiDataPermission(field, event.target.checked)} />
+                        <span>{label}</span>
+                      </label>)}
+                    </div>
+                  </div>
+                  <div className="ai-setting-field ai-permission-setting">
+                    <span><strong>助手操作权限</strong><small>开启后，字里助手会先给出操作确认卡；你勾选并确认后才修改作品，每次修改前都会自动保存版本</small></span>
+                    <div className="ai-permission-options">
+                      {([
+                        ['agentControl', '允许助手提出作品修改（需确认）'],
+                        ['agentAutoApply', '生成的正文跳过确认直接写入（不推荐）'],
                       ] as Array<[keyof AiDataPermissions, string]>).map(([field, label]) => <label key={field}>
                         <input type="checkbox" checked={aiDataPermissions[field]} onChange={(event) => updateAiDataPermission(field, event.target.checked)} />
                         <span>{label}</span>
@@ -8048,7 +10557,7 @@ function App() {
                     <div><strong>{aiUsageSummary.requests}</strong><small>请求</small><strong>{aiUsageSummary.successful}</strong><small>成功</small><strong>{aiUsageSummary.promptTokens + aiUsageSummary.completionTokens}</strong><small>Token</small></div>
                     {aiUsageSummary.requests > 0 && <button onClick={() => void clearCurrentProjectAiUsage()}>清除记录</button>}
                   </div>
-                  <p className="ai-data-notice">启用 AI 功能后，只有执行具体任务所需的作品片段才会发送到 {providerLabel(aiSettings.providerId)}。</p>
+                  <p className="ai-data-notice">启用 AI 功能后，只有执行具体任务所需的作品片段才会发送到 {providerLabel(aiSettings.providerId)}。开启“助手操作权限”后，助手会先给出操作确认卡，确认后才修改作品；每次正文修改前都会自动保存版本。</p>
                 </div>
               )}
               {settingsCategory === 'application' && (
@@ -8075,11 +10584,115 @@ function App() {
                   </div>
                 </div>}
                 <div className="setting-row">
+                  <span><strong>自动备份</strong><small>定时把完整项目备份写入作品保存路径，并只保留最近 N 份</small></span>
+                  <span className="switch-control">
+                    <input
+                      aria-label="启用自动备份"
+                      type="checkbox"
+                      checked={preferences.autoBackupEnabled}
+                      onChange={(event) => setPreferences((current) => ({ ...current, autoBackupEnabled: event.target.checked }))}
+                    />
+                    <span className="switch-track" aria-hidden="true"><span /></span>
+                  </span>
+                </div>
+                <div className="setting-row">
+                  <span><strong>自动备份间隔</strong><small>{preferences.autoBackupIntervalMinutes} 分钟一次</small></span>
+                  <span className="ai-budget-control">
+                    <input
+                      type="number"
+                      min="1"
+                      max="720"
+                      step="1"
+                      value={preferences.autoBackupIntervalMinutes}
+                      disabled={!preferences.autoBackupEnabled}
+                      onChange={(event) => setPreferences((current) => ({ ...current, autoBackupIntervalMinutes: Math.max(1, Math.min(720, Math.round(Number(event.target.value) || 10))) }))}
+                    />
+                    <small>分钟</small>
+                  </span>
+                </div>
+                <div className="setting-row">
+                  <span><strong>备份保留份数</strong><small>超出后会自动删除最旧的自动备份</small></span>
+                  <span className="ai-budget-control">
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      step="1"
+                      value={preferences.backupRetentionCount}
+                      disabled={!preferences.autoBackupEnabled}
+                      onChange={(event) => setPreferences((current) => ({ ...current, backupRetentionCount: Math.max(1, Math.min(50, Math.round(Number(event.target.value) || 10))) }))}
+                    />
+                    <small>份</small>
+                  </span>
+                </div>
+                <div className="setting-row">
+                  <span><strong>朗读语速</strong><small>朗读正文时使用的速度，0.5 倍到 2 倍</small></span>
+                  <span className="ai-budget-control">
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2"
+                      step="0.1"
+                      value={preferences.ttsRate}
+                      onChange={(event) => setPreferences((current) => ({ ...current, ttsRate: Math.max(0.5, Math.min(2, Number(event.target.value) || 1)) }))}
+                    />
+                    <small>{preferences.ttsRate.toFixed(1)} 倍</small>
+                  </span>
+                </div>
+                <div className="setting-row">
                   <span><strong>桌面更新</strong><small title={updateMessage || undefined}>{!updaterConfigured ? '正式发布配置后启用' : updateStatus === 'checking' ? '正在检查新版本' : updateStatus === 'available' ? `发现新版本 ${updateVersion}` : updateStatus === 'current' ? '当前已是最新版本' : updateStatus === 'downloading' ? '正在下载并安装' : updateStatus === 'ready' ? '更新已安装' : updateStatus === 'error' ? `检查失败：${updateMessage || '可重试'}` : '检查并安装正式版本更新'}</small></span>
                   <div className="update-setting-control">
                     <button title={updateMessage || undefined} disabled={!updaterConfigured || updateStatus === 'checking' || updateStatus === 'downloading'} onClick={() => void checkDesktopUpdate()}>
                       {updateStatus === 'checking' ? '检查中…' : updateStatus === 'downloading' ? '安装中…' : updateStatus === 'error' ? '重试检查' : updateStatus === 'available' ? '重新检查' : '检查更新'}
                     </button>
+                  </div>
+                </div>
+                <div className="setting-row keymap-setting">
+                  <span><strong>快捷键</strong><small>点进输入框直接按组合键录制；Backspace 清空；重复绑定会提示冲突</small></span>
+                  <div className="keymap-list">
+                    {KEYMAP_COMMANDS.map(([id, label]) => {
+                      const value = preferences.keymap[id] ?? ''
+                      const conflict = Boolean(value) && Object.entries(preferences.keymap).some(([otherId, other]) => otherId !== id && Boolean(other) && normalizeShortcut(other) === normalizeShortcut(value))
+                      return (
+                        <label key={id} className={conflict ? 'has-conflict' : ''}>
+                          <span>{label}</span>
+                          <input
+                            value={value}
+                            placeholder="未设置"
+                            readOnly
+                            onKeyDown={(event) => {
+                              event.preventDefault()
+                              if (event.key === 'Backspace' || event.key === 'Delete') {
+                                setPreferences((current) => ({ ...current, keymap: { ...current.keymap, [id]: '' } }))
+                                return
+                              }
+                              if (event.key === 'Tab' || ['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return
+                              const parts: string[] = []
+                              if (event.ctrlKey || event.metaKey) parts.push('Ctrl')
+                              if (event.altKey) parts.push('Alt')
+                              if (event.shiftKey) parts.push('Shift')
+                              if (parts.length === 0) return
+                              const key = event.key === ' ' ? 'Space' : event.key.length === 1 ? event.key.toUpperCase() : event.key[0].toUpperCase() + event.key.slice(1).toLowerCase()
+                              setPreferences((current) => ({ ...current, keymap: { ...current.keymap, [id]: [...parts, key].join('+') } }))
+                            }}
+                          />
+                          {conflict && <small>与其他命令重复</small>}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="setting-row sync-setting">
+                  <span><strong>跨设备同步</strong><small>写进网盘的本地同步文件夹，另一台设备再拉取；不做端到端加密，安全依赖网盘本身，拉取只生成新副本不覆盖本地</small></span>
+                  <div className="sync-control">
+                    <input className="sync-path" readOnly value={preferences.syncDirectory} placeholder="未设置同步目录" onClick={() => void chooseSyncDirectory()} />
+                    <div className="sync-actions">
+                      <button onClick={() => void chooseSyncDirectory()}>选择目录</button>
+                      <button disabled={Boolean(syncBusy) || !preferences.syncDirectory} onClick={() => void pushToSyncDirectory()}>{syncBusy === 'push' ? '同步中…' : '立即同步'}</button>
+                      <button disabled={Boolean(syncBusy) || !preferences.syncDirectory} onClick={() => void checkSyncRemote()}>{syncBusy === 'check' ? '检查中…' : '检查远端'}</button>
+                      <button disabled={Boolean(syncBusy) || !preferences.syncDirectory} onClick={() => void pullFromSyncDirectory()}>{syncBusy === 'pull' ? '拉取中…' : '拉取远端'}</button>
+                    </div>
+                    <small className="sync-status">{syncMessage || (syncRemote ? `远端 r${syncRemote.revision} · ${syncRemote.deviceLabel || '未知设备'}` : '尚未同步')}</small>
                   </div>
                 </div>
               </>
@@ -8107,6 +10720,18 @@ function App() {
           </section>
         </div>
       )}
+      <input
+        ref={commentsFileRef}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0] ?? null
+          event.target.value = ''
+          void importComments(file)
+        }}
+      />
+      <CommandPalette open={commandPaletteOpen} commands={paletteCommands} onClose={() => setCommandPaletteOpen(false)} />
     </main>
   )
 }

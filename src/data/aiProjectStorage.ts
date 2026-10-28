@@ -56,6 +56,7 @@ export async function deleteAiProjectData(projectId: string): Promise<void> {
         || (Array.isArray(item.candidates) && item.candidates.some((candidate) => (candidate as Record<string, unknown>).projectId === projectId)))
     }
     localStorage.removeItem(`zili-writing-ai-data-permissions-v1:${projectId}`)
+    localStorage.removeItem(`zili-writing-ai-data-permissions-v2:${projectId}`)
     return
   }
   const database = await Database.load(DATABASE_URL)
@@ -75,6 +76,7 @@ export async function deleteAiProjectData(projectId: string): Promise<void> {
     'research_source_cards',
   ]) await database.execute(`DELETE FROM ${table} WHERE project_id = $1`, [projectId])
   localStorage.removeItem(`zili-writing-ai-data-permissions-v1:${projectId}`)
+  localStorage.removeItem(`zili-writing-ai-data-permissions-v2:${projectId}`)
 }
 
 export async function exportAiProjectData(project: ProjectState): Promise<AiProjectData> {

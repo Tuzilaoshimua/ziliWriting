@@ -1,6 +1,7 @@
+use std::fs;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
-use std::path::PathBuf;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use tauri::Manager;
 use tauri_plugin_http::reqwest;
@@ -600,6 +601,13 @@ fn save_project_backup(
     file_name: String,
     bytes: Vec<u8>,
 ) -> Result<String, String> {
+    let path = write_backup_file(&directory, &file_name, &bytes)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// 写出备份文件。`directory`、`file_name` 和 `bytes` 的校验与现有
+/// `save_project_backup` 完全一致，供定时自动备份复用（自动备份还会做保留清理）。
+fn write_backup_file(directory: &str, file_name: &str, bytes: &[u8]) -> Result<PathBuf, String> {
     let directory = directory.trim();
     if directory.is_empty() {
         return Err("save directory is empty".into());
@@ -607,7 +615,7 @@ fn save_project_backup(
     if bytes.is_empty() || bytes.len() > 500 * 1024 * 1024 {
         return Err("backup size must be between 1 byte and 500 MB".into());
     }
-    let name = std::path::Path::new(file_name.trim())
+    let name = Path::new(file_name.trim())
         .file_name()
         .and_then(|value| value.to_str())
         .filter(|value| !value.is_empty() && value.to_ascii_lowercase().ends_with(".zili"))
@@ -627,11 +635,141 @@ fn save_project_backup(
             }
         })
         .collect();
-    let path = std::path::Path::new(directory).join(safe_name);
+    let path = Path::new(directory).join(safe_name);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     std::fs::write(&path, bytes).map_err(|error| error.to_string())?;
+    Ok(path)
+}
+
+/// 自动备份：写出带时间戳的 .zili 文件，并保留最近 `keep` 份对该作品前缀的备份。
+/// 返回最终写入的文件路径。清理失败不影响备份本身（自动备份的保留是尽力而为）。
+#[tauri::command]
+fn save_auto_project_backup(
+    directory: String,
+    file_name: String,
+    prefix: String,
+    bytes: Vec<u8>,
+    keep: u32,
+) -> Result<String, String> {
+    let path = write_backup_file(&directory, &file_name, &bytes)?;
+    let keep = keep.max(0) as usize;
+    if keep == 0 {
+        return Ok(path.to_string_lossy().into_owned());
+    }
+    let directory = directory.trim();
+    if let Ok(entries) = fs::read_dir(directory) {
+        let mut backups: Vec<(SystemTime, PathBuf)> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let file_name = entry.file_name();
+                let file_name = file_name.to_string_lossy();
+                if file_name.starts_with(&prefix) && file_name.ends_with(".zili") {
+                    let modified = entry
+                        .metadata()
+                        .ok()
+                        .and_then(|metadata| metadata.modified().ok());
+                    modified.map(|time| (time, entry.path()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        backups.sort_by(|left, right| right.0.cmp(&left.0));
+        if backups.len() > keep {
+            for (_, stale) in backups.into_iter().skip(keep) {
+                let _ = fs::remove_file(stale);
+            }
+        }
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// 校验同步目录下的项目子目录名：只允许字母、数字、`-`、`_`，长度不超过 64。
+fn validate_sync_segment(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.len() > 64 {
+        return Err("invalid sync project id".into());
+    }
+    if !trimmed
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err("sync project id may only contain letters, digits, '-' and '_'".into());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn sync_project_dir(directory: &str, project_id: &str) -> Result<PathBuf, String> {
+    let directory = directory.trim();
+    if directory.is_empty() {
+        return Err("sync directory is empty".into());
+    }
+    let project_id = validate_sync_segment(project_id)?;
+    Ok(Path::new(directory).join(project_id))
+}
+
+/// 把同步包与 manifest 写入网盘目录：`<directory>/<projectId>/project.zili` + `manifest.json`。
+/// 写入失败只会影响同步，不会影响本地保存。
+#[tauri::command]
+fn write_sync_files(
+    directory: String,
+    project_id: String,
+    bytes: Vec<u8>,
+    manifest: String,
+) -> Result<String, String> {
+    if bytes.is_empty() || bytes.len() > 500 * 1024 * 1024 {
+        return Err("sync package size must be between 1 byte and 500 MB".into());
+    }
+    let target = sync_project_dir(&directory, &project_id)?;
+    std::fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+    std::fs::write(target.join("project.zili"), &bytes).map_err(|error| error.to_string())?;
+    std::fs::write(target.join("manifest.json"), manifest.as_bytes())
+        .map_err(|error| error.to_string())?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn read_sync_manifest(directory: String, project_id: String) -> Result<Option<String>, String> {
+    let target = sync_project_dir(&directory, &project_id)?;
+    let path = target.join("manifest.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    std::fs::read_to_string(path)
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn read_sync_package(directory: String, project_id: String) -> Result<Option<Vec<u8>>, String> {
+    let target = sync_project_dir(&directory, &project_id)?;
+    let path = target.join("project.zili");
+    if !path.exists() {
+        return Ok(None);
+    }
+    std::fs::read(path).map(Some).map_err(|error| error.to_string())
+}
+
+/// 冲突副本：revision 相同但内容不同（或拉取前本地有未同步修改）时另存一份，不覆盖任何一方。
+#[tauri::command]
+fn write_sync_conflict(
+    directory: String,
+    project_id: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    if bytes.is_empty() {
+        return Err("conflict copy is empty".into());
+    }
+    let target = sync_project_dir(&directory, &project_id)?;
+    std::fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let path = target.join(format!("project.conflict-{timestamp}.zili"));
+    std::fs::write(&path, &bytes).map_err(|error| error.to_string())?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -1179,6 +1317,64 @@ pub fn run() {
       "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 24,
+            description: "add_writing_sessions",
+            sql: r#"
+        CREATE TABLE IF NOT EXISTS writing_sessions (
+          id TEXT PRIMARY KEY NOT NULL,
+          project_id TEXT NOT NULL,
+          chapter_id TEXT,
+          started_at INTEGER NOT NULL,
+          ended_at INTEGER NOT NULL,
+          words_added INTEGER NOT NULL DEFAULT 0,
+          words_removed INTEGER NOT NULL DEFAULT 0,
+          active_ms INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_writing_sessions_project_started
+          ON writing_sessions(project_id, started_at);
+      "#,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 25,
+            description: "add_outline_chapter_links",
+            sql: r#"
+        CREATE TABLE IF NOT EXISTS outline_chapter_links (
+          project_id TEXT NOT NULL,
+          node_id TEXT NOT NULL,
+          chapter_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (project_id, node_id, chapter_id),
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_outline_chapter_links_project
+          ON outline_chapter_links(project_id);
+      "#,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 26,
+            description: "add_chapter_comments",
+            sql: r#"
+        CREATE TABLE IF NOT EXISTS chapter_comments (
+          id TEXT PRIMARY KEY NOT NULL,
+          project_id TEXT NOT NULL,
+          chapter_id TEXT NOT NULL,
+          anchor TEXT NOT NULL,
+          quote TEXT NOT NULL,
+          comment TEXT NOT NULL,
+          author TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          resolved INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_chapter_comments_project
+          ON chapter_comments(project_id, created_at);
+      "#,
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -1204,6 +1400,11 @@ pub fn run() {
             save_ai_settings,
             load_ai_settings,
             save_project_backup,
+            save_auto_project_backup,
+            write_sync_files,
+            read_sync_manifest,
+            read_sync_package,
+            write_sync_conflict,
             fetch_web_research_text,
         ])
         .plugin(
@@ -1218,6 +1419,34 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+            // 桌面化：关掉 WebView2 的浏览器级快捷键（F5 刷新、F3 查找、Ctrl+P 打印等），
+            // 只保留应用自己实现的快捷键。
+            #[cfg(windows)]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.with_webview(|webview| {
+                        use webview2_com::Microsoft::Web::WebView2::Win32::{
+                            ICoreWebView2Controller, ICoreWebView2Settings3,
+                        };
+                        use windows_core::Interface;
+                        let controller: ICoreWebView2Controller = webview.controller();
+                        unsafe {
+                            if let Ok(core) = controller.CoreWebView2() {
+                                if let Ok(settings) = core.Settings() {
+                                    #[cfg(not(debug_assertions))]
+                                    {
+                                        let _ = settings.SetAreDevToolsEnabled(false);
+                                    }
+                                    if let Ok(settings3) = settings.cast::<ICoreWebView2Settings3>() {
+                                        let _ = settings3.SetAreBrowserAcceleratorKeysEnabled(false);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
             }
             Ok(())
         })

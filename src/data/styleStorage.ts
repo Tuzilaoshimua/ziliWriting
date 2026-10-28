@@ -2,6 +2,27 @@ import Database from '@tauri-apps/plugin-sql'
 import { isTauri } from '@tauri-apps/api/core'
 import { webGet, webPut } from './webDatabase'
 
+export type AuthorVoiceFingerprint = {
+  sampleCharacters: number
+  sentenceCount: number
+  averageSentenceLength: number
+  sentenceLengthStdDev: number
+  dialogueRatio: number
+  paragraphCount: number
+  averageParagraphLength: number
+  adverbPer1000: number
+  commaPer1000: number
+  topSentenceStarts: string[]
+  updatedAt: number
+}
+
+export type AuthorEditSample = {
+  before: string
+  after: string
+  signals: string[]
+  createdAt: number
+}
+
 export type StyleProfile = {
   projectId: string
   sourceReferenceIds: string[]
@@ -17,6 +38,20 @@ export type StyleProfile = {
   chapterEndingPattern: string
   editableGuidance: string
   referenceFingerprints: string[]
+  /** 明确禁止出现的词句，一行一条。 */
+  bannedPhrases: string[]
+  /** 明确禁止的句式或写法，一行一条。 */
+  bannedPatterns: string[]
+  /** 作者自己满意、希望 AI 学习的正文片段。 */
+  voiceSamples: string[]
+  /** 作者补充的文风禁区。 */
+  styleTaboos: string
+  /** 从作者本人正文统计出的声音指纹。 */
+  voiceFingerprint: AuthorVoiceFingerprint | null
+  /** 从作者手改中归纳出的本书偏好。 */
+  learnedPreferences: string[]
+  /** 最近几次手改的前后对照，只保存在当前作品。 */
+  editSamples: AuthorEditSample[]
   updatedAt: number
 }
 
@@ -39,6 +74,13 @@ export function emptyStyleProfile(projectId: string): StyleProfile {
     chapterEndingPattern: '',
     editableGuidance: '',
     referenceFingerprints: [],
+    bannedPhrases: [],
+    bannedPatterns: [],
+    voiceSamples: [],
+    styleTaboos: '',
+    voiceFingerprint: null,
+    learnedPreferences: [],
+    editSamples: [],
     updatedAt: Date.now(),
   }
 }

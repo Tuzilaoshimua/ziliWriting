@@ -4,6 +4,8 @@ import type { CreativeBrief, OutlineNode } from '../data/creativeStorage'
 import type { ReviewCategory, ReviewEvidence, ReviewIssue, ReviewSeverity, ReviewSource } from '../data/reviewStorage'
 import type { AiSettings } from './settings'
 import { AiRequestError, generateStructured } from './client'
+import { AI_STYLE_RULE_LABELS, formatAiStyleIssue, lintAiStyle } from './antiAiStyle'
+import type { StyleProfile } from '../data/styleStorage'
 
 export type ReviewPassage = { nodeId: string; text: string; startOffsetInNode?: number; endOffsetInNode?: number }
 export type ReviewTextScope = 'selection' | 'scene' | 'chapter' | 'range'
@@ -12,7 +14,7 @@ export type ReviewTarget = {
   label: string
   chapters: Array<{ chapter: Chapter; passages?: ReviewPassage[]; sceneId?: string; sceneTitle?: string; sceneGoal?: string; sceneNotes?: string }>
 }
-const CATEGORIES: ReviewCategory[] = ['character', 'timeline', 'knowledge', 'world', 'motivation', 'repetition', 'pacing', 'foreshadowing', 'ai_fact']
+const CATEGORIES: ReviewCategory[] = ['character', 'timeline', 'knowledge', 'world', 'motivation', 'repetition', 'pacing', 'foreshadowing', 'ai_fact', 'prose']
 const SEVERITIES: ReviewSeverity[] = ['info', 'warning', 'error']
 
 function textFromNode(node: DocumentNode): string {
@@ -60,7 +62,7 @@ function makeIssue(projectId: string, chapter: Chapter, index: number, category:
   }
 }
 
-export function runAutomaticChecks(projectId: string, chapter: Chapter): ReviewIssue[] {
+export function runAutomaticChecks(projectId: string, chapter: Chapter, styleProfile?: StyleProfile | null): ReviewIssue[] {
   const passages = passagesFromChapter(chapter)
   const issues: ReviewIssue[] = []
   for (let index = 1; index < passages.length; index += 1) {
@@ -85,6 +87,27 @@ export function runAutomaticChecks(projectId: string, chapter: Chapter): ReviewI
     issues.push(makeIssue(projectId, chapter, issues.length, 'repetition', 'warning', '对话引号可能未闭合', `本章检测到 ${openingQuotes} 个左引号和 ${closingQuotes} 个右引号。`, '检查引号是否成对出现。', [
       { chapterId: chapter.id, chapterTitle: chapter.title, nodeId: passages[passages.length - 1].nodeId, quote: passages[passages.length - 1].text.slice(0, 300) },
     ]))
+  }
+  for (const styleIssue of lintAiStyle(chapter.plainText, styleProfile, 6)) {
+    const fragment = styleIssue.quote.replace(/\s+/g, '').slice(0, 10)
+    const passage = passages.find((item) => item.text.replace(/\s+/g, '').includes(fragment)) ?? passages[0]
+    if (!passage) continue
+    const suggestion = styleIssue.rule === 'banned-phrase'
+      ? '删掉这个套话，改用具体动作、物件、停顿或人物反应来呈现。'
+      : styleIssue.rule === 'banned-pattern' || styleIssue.rule === 'summary-ending'
+        ? '不要替读者总结或点题，停在更具体的动作、画面或对话上。'
+        : '检查这一段是否有意为之；如果不是，增加句长疏密、具体细节和人物选择的差异。'
+    issues.push(makeIssue(
+      projectId,
+      chapter,
+      issues.length,
+      'prose',
+      styleIssue.severity,
+      `文风提示：${AI_STYLE_RULE_LABELS[styleIssue.rule]}`,
+      formatAiStyleIssue(styleIssue),
+      suggestion,
+      [{ chapterId: chapter.id, chapterTitle: chapter.title, nodeId: passage.nodeId, quote: passage.text.slice(0, 300) }],
+    ))
   }
   return issues
 }
@@ -130,8 +153,9 @@ export async function reviewScopedContinuity(
     messages: [
       {
         role: 'system',
-        content: `你是小说连续性审稿助理。只报告有明确依据的问题，不要把个人偏好包装成错误。检查人物状态、时间线、认知边界、世界规则、动机、重复、节奏、伏笔和新增事实。
-返回 JSON：{"issues":[{"category":"character|timeline|knowledge|world|motivation|repetition|pacing|foreshadowing|ai_fact","severity":"info|warning|error","title":"问题标题","detail":"为什么是问题","suggestion":"处理建议","evidenceNodeIds":["证据id"]}]}。
+        content: `你是小说连续性审稿助理。只报告有明确依据的问题，不要把个人偏好包装成错误。检查人物状态、时间线、认知边界、世界规则、动机、重复、节奏、伏笔、新增事实和文风自然度。
+文风检查只报告有原文依据的 AI 腔问题：段尾总结、升华或点题；直接命名情绪；连续对仗模板；三段排比；万能比喻；对话过度完整或过度礼貌；用解释代替动作和场景；句长、段落过于整齐；套话词句。作者刻意的口语、粗粝感、留白和类型化写法不算问题，不要误报。
+返回 JSON：{"issues":[{"category":"character|timeline|knowledge|world|motivation|repetition|pacing|foreshadowing|ai_fact|prose","severity":"info|warning|error","title":"问题标题","detail":"为什么是问题","suggestion":"处理建议","evidenceNodeIds":["证据id"]}]}。
 最多 20 条。证据只能使用输入中的真实 id。证据不足就不报告。`,
       },
       { role: 'user', content: `作品：${project.title}\n检查范围：${target.label}\n创作简报：${JSON.stringify(brief)}\n相关大纲：${JSON.stringify(outline.slice(0, 50))}\n已确认正典：${JSON.stringify(confirmed)}\n${source}` },
@@ -222,7 +246,7 @@ export async function reviewProjectContinuity(
     metadata: { projectId: project.id, taskType: 'project_review', promptVersion: '1' },
     messages: [
       { role: 'system', content: `你是长篇小说审稿助理。根据作者已确认的正典资料查找跨章节矛盾、长期未推进事项和认知越界。不要仅因情节尚未解释就断言矛盾。
-返回 JSON：{"issues":[{"category":"character|timeline|knowledge|world|motivation|repetition|pacing|foreshadowing|ai_fact","severity":"info|warning|error","title":"问题标题","detail":"判断依据","suggestion":"建议","evidenceIds":["资料id"]}]}。每条至少引用两条输入资料，最多 20 条。` },
+返回 JSON：{"issues":[{"category":"character|timeline|knowledge|world|motivation|repetition|pacing|foreshadowing|ai_fact|prose","severity":"info|warning|error","title":"问题标题","detail":"判断依据","suggestion":"建议","evidenceIds":["资料id"]}]}。每条至少引用两条输入资料，最多 20 条。` },
       { role: 'user', content: `作品：${project.title}\n已确认资料：${JSON.stringify(evidence)}` },
     ],
   })
@@ -245,5 +269,5 @@ export async function reviewProjectContinuity(
 }
 
 export const REVIEW_CATEGORY_LABELS: Record<ReviewCategory, string> = {
-  character: '人物状态', timeline: '时间线', knowledge: '认知边界', world: '世界规则', motivation: '人物动机', repetition: '重复', pacing: '节奏', foreshadowing: '伏笔', ai_fact: '新增事实',
+  character: '人物状态', timeline: '时间线', knowledge: '认知边界', world: '世界规则', motivation: '人物动机', repetition: '重复', pacing: '节奏', foreshadowing: '伏笔', ai_fact: '新增事实', prose: '文风自然度',
 }

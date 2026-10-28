@@ -1,7 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
-import { acquireBuiltinCredential } from './builtinService'
-import { isBuiltinAgnesProvider, type AiSettings } from './settings'
+import { acquireBuiltinCredential, BUILTIN_API_KEY_SENTINEL } from './builtinService'
+import { BUILTIN_AGNES_ENDPOINTS, BUILTIN_AGNES_MODEL, isBuiltinAgnesProvider, type AiSettings } from './settings'
 import { getAiUsageSummary, recordAiUsage } from '../data/aiUsageStorage'
 
 export type AiChatContentPart =
@@ -34,6 +34,53 @@ export type AiChatResult = {
   model: string
   promptTokens: number | null
   completionTokens: number | null
+}
+
+type CustomTaskKeyResolver = (baseUrl: string) => Promise<string | null>
+
+let customTaskKeyResolver: CustomTaskKeyResolver | null = null
+
+/** 由应用层注册：按自定义接口地址取回已保存的密钥，用于「全局内置服务 + 个别任务走用户 API」的混用。 */
+export function setCustomTaskKeyResolver(resolver: CustomTaskKeyResolver | null) {
+  customTaskKeyResolver = resolver
+}
+
+export function resolveTaskModel(settings: AiSettings, taskType?: string): string {
+  const route = taskType ? settings.taskRoutes?.[taskType] : undefined
+  if (!route) return settings.model.trim()
+  return route.providerId === 'builtin-agnes' ? BUILTIN_AGNES_MODEL : (route.model.trim() || settings.model.trim())
+}
+
+/** 按任务路由到内置服务或用户 API；无法安全路由时回退到全局配置。 */
+async function routeForTask(settings: AiSettings, apiKey: string, taskType?: string) {
+  const route = taskType ? settings.taskRoutes?.[taskType] : undefined
+  if (!route) return { settings, apiKey, routed: false }
+  if (route.providerId === 'builtin-agnes') {
+    return {
+      settings: {
+        ...settings,
+        providerId: 'builtin-agnes' as const,
+        baseUrl: BUILTIN_AGNES_ENDPOINTS[settings.builtinRegion],
+        model: BUILTIN_AGNES_MODEL,
+      },
+      apiKey: BUILTIN_API_KEY_SENTINEL,
+      routed: true,
+    }
+  }
+  const baseUrl = route.baseUrl.trim()
+  const model = route.model.trim()
+  if (!baseUrl || !model) return { settings, apiKey, routed: false }
+  const sameEndpoint = baseUrl.replace(/\/+$/, '').toLowerCase() === settings.baseUrl.trim().replace(/\/+$/, '').toLowerCase()
+  let key = sameEndpoint && apiKey.trim() && apiKey !== BUILTIN_API_KEY_SENTINEL ? apiKey : ''
+  if (!key && customTaskKeyResolver) {
+    try {
+      key = (await customTaskKeyResolver(baseUrl)) ?? ''
+    } catch {
+      key = ''
+    }
+  }
+  if (!key) return { settings, apiKey, routed: false }
+  return { settings: { ...settings, providerId: 'openai-compatible' as const, baseUrl, model }, apiKey: key, routed: true }
 }
 
 export type AiConnectionResult = {
@@ -438,12 +485,13 @@ async function chatCompletionOnce(settings: AiSettings, apiKey: string, request:
 }
 
 export async function chatCompletion(settings: AiSettings, apiKey: string, request: AiChatRequest): Promise<AiChatResult> {
+  const active = await routeForTask(settings, apiKey, request.metadata?.taskType)
   try {
-    return await chatCompletionOnce(settings, apiKey, request)
+    return await chatCompletionOnce(active.settings, active.apiKey, request)
   } catch (error) {
     if (!isModelUnavailableError(error) || request.signal?.aborted) throw error
-    const fallbackSettings = await fallbackSettingsForUnavailableModel(settings, apiKey, request.signal)
-    return chatCompletionOnce(fallbackSettings, apiKey, request)
+    const fallbackSettings = await fallbackSettingsForUnavailableModel(active.settings, active.apiKey, request.signal)
+    return chatCompletionOnce(fallbackSettings, active.apiKey, request)
   }
 }
 
@@ -586,13 +634,15 @@ export function clearStreamProgress(taskType: string, projectId?: string | null)
 export async function streamChatCompletion(settings: AiSettings, apiKey: string, request: AiChatRequest, onDelta: (text: string) => void): Promise<AiChatResult> {
   let receivedCharacters = 0
   const totalDeadline = Date.now() + settings.totalTimeoutSeconds * 1000
+  const active = await routeForTask(settings, apiKey, request.metadata?.taskType)
+  const baseSettings = active.settings
   emitStreamProgress(request, 0, true)
   const run = async (activeSettings: AiSettings) => {
     let lastError: unknown
     for (let attempt = 0; attempt < 3; attempt += 1) {
       let attemptReceived = 0
       try {
-        return await streamChatCompletionOnce(activeSettings, apiKey, request, (delta) => {
+        return await streamChatCompletionOnce(activeSettings, active.apiKey, request, (delta) => {
           attemptReceived += delta.length
           receivedCharacters += delta.length
           emitStreamProgress(request, receivedCharacters, true)
@@ -608,10 +658,10 @@ export async function streamChatCompletion(settings: AiSettings, apiKey: string,
   }
   try {
     try {
-      return await run(settings)
+      return await run(baseSettings)
     } catch (error) {
       if (!isModelUnavailableError(error) || request.signal?.aborted || receivedCharacters > 0) throw error
-      const fallbackSettings = await fallbackSettingsForUnavailableModel(settings, apiKey, request.signal)
+      const fallbackSettings = await fallbackSettingsForUnavailableModel(baseSettings, active.apiKey, request.signal)
       return run(fallbackSettings)
     }
   } finally {

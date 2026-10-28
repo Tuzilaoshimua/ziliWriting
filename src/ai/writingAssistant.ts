@@ -6,6 +6,7 @@ import type { StyleProfile } from '../data/styleStorage'
 import type { AiSettings } from './settings'
 import { AiRequestError, generateStructured } from './client'
 import { findReferenceOverlap } from './styleAssistant'
+import { formatAiStyleIssue, formatAntiAiStylePrompt, lintAiStyle } from './antiAiStyle'
 
 export type DraftTask = {
   mode: DraftMode
@@ -15,6 +16,9 @@ export type DraftTask = {
   noNewFacts: boolean
   styleInstruction: string
   selectedText: string
+  pov?: string
+  endingBeat?: string
+  withhold?: string
 }
 
 function text(value: unknown, maximum = 2000) {
@@ -72,13 +76,13 @@ export async function generateDraftCandidates(
     messages: [
       {
         role: 'system',
-        content: `你是小说作者按需调用的协作者。只生成有限候选文本，不能声称候选已经写入正文。必须遵守任务约束和已确认正典，不得擅自复制特定作者表达。
+        content: `你是小说作者按需调用的协作者。只生成有限候选文本，不能声称候选已经写入正文。必须遵守任务约束和已确认正典，不得擅自复制特定作者表达。必须遵守下面的“去 AI 腔写作契约”，不要把文字修得工整、完整、对称；宁可留下粗粝的动作和停顿。
 返回 JSON：{"candidates":[{"title":"方案名","text":"候选正文","validation":{"newFacts":["新增事实"],"usedContext":["使用的已知资料"],"conflicts":["潜在冲突"],"goalCoverage":"目标完成情况","styleNotes":["风格说明"]}}]}。
 提供 2 至 3 个明显不同的候选方案。每个方案都要自行校验；无法确定的事实必须列入 newFacts 或 conflicts。不要输出 Markdown 代码块。`,
       },
       {
         role: 'user',
-        content: `作品：${project.title}\n任务模式：${task.mode}\n目标长度：约 ${task.targetLength} 字\n必须发生：${task.mustInclude || '无'}\n禁止发生：${task.mustAvoid || '无'}\n是否禁止新增正典事实：${task.noNewFacts ? '是' : '否，但新增事实仍需列出'}\n表达要求：${task.styleInstruction || '保持当前章节语气和节奏'}\n抽象风格档案：${JSON.stringify({ sentenceRhythm: styleProfile.sentenceRhythm, paragraphRhythm: styleProfile.paragraphRhythm, compositionBalance: styleProfile.compositionBalance, pointOfView: styleProfile.pointOfView, narrativeDistance: styleProfile.narrativeDistance, emotionalTone: styleProfile.emotionalTone, editableGuidance: styleProfile.editableGuidance })}\n当前场景：${scene ? JSON.stringify({ title: scene.title, goal: scene.goal, notes: scene.notes }) : '未设置'}\n创作简报：${JSON.stringify(brief)}\n相关大纲：${JSON.stringify(relevantOutline)}\n已确认资料：${JSON.stringify(confirmed)}\n选区：${task.selectedText || '无'}\n当前章节前文：\n${prefix}`,
+        content: `作品：${project.title}\n任务模式：${task.mode}\n目标长度：约 ${task.targetLength} 字\n必须发生：${task.mustInclude || '无'}\n禁止发生：${task.mustAvoid || '无'}\n视角人物：${task.pov?.trim() || '沿用当前章节视角'}\n退出节拍：${task.endingBeat?.trim() || '停在具体动作、画面或对话上，不总结、不升华'}\n必须暂时隐瞒：${task.withhold?.trim() || '无'}\n是否禁止新增正典事实：${task.noNewFacts ? '是' : '否，但新增事实仍需列出'}\n表达要求：${task.styleInstruction || '保持当前章节语气和节奏'}\n抽象风格档案：${JSON.stringify({ sentenceRhythm: styleProfile.sentenceRhythm, paragraphRhythm: styleProfile.paragraphRhythm, compositionBalance: styleProfile.compositionBalance, pointOfView: styleProfile.pointOfView, narrativeDistance: styleProfile.narrativeDistance, emotionalTone: styleProfile.emotionalTone, editableGuidance: styleProfile.editableGuidance })}\n${formatAntiAiStylePrompt(styleProfile)}\n当前场景：${scene ? JSON.stringify({ title: scene.title, goal: scene.goal, notes: scene.notes }) : '未设置'}\n创作简报：${JSON.stringify(brief)}\n相关大纲：${JSON.stringify(relevantOutline)}\n已确认资料：${JSON.stringify(confirmed)}\n选区：${task.selectedText || '无'}\n当前章节前文：\n${prefix}`,
       },
     ],
   })
@@ -90,6 +94,7 @@ export async function generateDraftCandidates(
     const validationSource = item.validation ?? {}
     const overlap = findOverlap(candidateText, task.mode === 'rewrite' ? chapter.plainText.replace(task.selectedText, '') : chapter.plainText)
     const referenceOverlap = findReferenceOverlap(candidateText, styleProfile.referenceFingerprints)
+    const styleWarnings = lintAiStyle(candidateText, styleProfile).map(formatAiStyleIssue)
     const validation: DraftValidation = {
       newFacts: strings(validationSource.newFacts),
       usedContext: strings(validationSource.usedContext),
@@ -100,6 +105,7 @@ export async function generateDraftCandidates(
         ...(overlap ? [`与现有正文存在较长连续重合：“${overlap}”`] : []),
         ...(referenceOverlap ? [`与参考文本存在较长连续重合：“${referenceOverlap}”`] : []),
       ],
+      styleWarnings,
     }
     if (task.noNewFacts && validation.newFacts.length > 0) validation.conflicts.unshift('任务要求不新增事实，但该候选包含新增事实')
     return [{

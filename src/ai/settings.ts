@@ -12,11 +12,19 @@ export const BUILTIN_AGNES_ENDPOINTS: Record<BuiltinAgnesRegion, string> = {
 
 export const LEGACY_AGNES_PROVIDER_ID = 'agnes'
 
+export type AiTaskRoute = {
+  providerId: AiProviderId
+  baseUrl: string
+  model: string
+}
+
 export type AiSettings = {
   providerId: AiProviderId
   builtinRegion: BuiltinAgnesRegion
   baseUrl: string
   model: string
+  /** 按任务路由：taskType → 走内置服务，或走某个用户 API 端点 + 模型 */
+  taskRoutes: Record<string, AiTaskRoute>
   successfulBaseUrls: string[]
   successfulModels: Record<string, string>
   timeoutSeconds: number
@@ -25,7 +33,11 @@ export type AiSettings = {
   streamResponses: boolean
 }
 
-export type StoredAiSettings = Omit<Partial<AiSettings>, 'providerId'> & { providerId?: string }
+export type StoredAiSettings = Omit<Partial<AiSettings>, 'providerId'> & {
+  providerId?: string
+  /** 旧版只按模型覆盖的设置，读取时迁移成 taskRoutes */
+  taskModels?: Record<string, string>
+}
 
 const SETTINGS_KEY = 'zili-writing-ai-settings-v1'
 
@@ -34,6 +46,7 @@ export const OPENAI_COMPATIBLE_DEFAULTS: AiSettings = {
   builtinRegion: 'international',
   baseUrl: '',
   model: '',
+  taskRoutes: {},
   successfulBaseUrls: [],
   successfulModels: {},
   timeoutSeconds: 60,
@@ -71,11 +84,38 @@ export function normalizeAiSettings(stored: StoredAiSettings): AiSettings {
   if (activeEndpointKey && successfulBaseUrls.some((endpoint) => endpoint.toLocaleLowerCase() === activeEndpointKey) && model && !successfulModels[activeEndpointKey]) {
     successfulModels[activeEndpointKey] = model
   }
+  const builtinEndpoints = new Set(Object.values(BUILTIN_SERVICES).map((service) => service.baseUrl.trim().replace(/\/+$/, '').toLocaleLowerCase()))
+  const fallbackCustomBaseUrl = successfulBaseUrls.find((endpoint) => !builtinEndpoints.has(endpoint.toLocaleLowerCase())) ?? ''
+  const taskRoutes: Record<string, AiTaskRoute> = {}
+  if (value.taskRoutes && typeof value.taskRoutes === 'object' && !Array.isArray(value.taskRoutes)) {
+    for (const [taskType, rawRoute] of Object.entries(value.taskRoutes as Record<string, unknown>).slice(0, 40)) {
+      if (!taskType.trim() || !rawRoute || typeof rawRoute !== 'object') continue
+      const route = rawRoute as Partial<AiTaskRoute>
+      const routeProvider: AiProviderId = route.providerId === 'builtin-agnes' ? 'builtin-agnes' : 'openai-compatible'
+      const routeBaseUrl = typeof route.baseUrl === 'string' ? route.baseUrl.trim().replace(/\/+$/, '') : ''
+      const routeModel = typeof route.model === 'string' ? route.model.trim() : ''
+      if (routeProvider === 'builtin-agnes') {
+        taskRoutes[taskType.trim()] = { providerId: 'builtin-agnes', baseUrl: '', model: '' }
+        continue
+      }
+      if (!routeBaseUrl || !routeModel) continue
+      taskRoutes[taskType.trim()] = { providerId: 'openai-compatible', baseUrl: routeBaseUrl, model: routeModel }
+    }
+  }
+  // 旧版 taskModels 只有模型名：迁移成「用户 API + 最近保存过的自定义端点」。
+  if (value.taskModels && typeof value.taskModels === 'object' && !Array.isArray(value.taskModels)) {
+    for (const [taskType, rawModel] of Object.entries(value.taskModels as Record<string, unknown>).slice(0, 40)) {
+      if (taskRoutes[taskType]) continue
+      if (typeof rawModel !== 'string' || !rawModel.trim() || !fallbackCustomBaseUrl) continue
+      taskRoutes[taskType] = { providerId: 'openai-compatible', baseUrl: fallbackCustomBaseUrl, model: rawModel.trim() }
+    }
+  }
   return {
     providerId,
     builtinRegion,
     baseUrl,
     model,
+    taskRoutes,
     successfulBaseUrls,
     successfulModels,
     timeoutSeconds,

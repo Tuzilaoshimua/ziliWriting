@@ -87,6 +87,13 @@ export async function analyzeStyleProfile(
     chapterEndingPattern: clean(result.chapterEndingPattern),
     editableGuidance: clean(result.editableGuidance, 2200),
     referenceFingerprints: createReferenceFingerprints(sources),
+    bannedPhrases: [],
+    bannedPatterns: [],
+    voiceSamples: [],
+    styleTaboos: '',
+    voiceFingerprint: null,
+    learnedPreferences: [],
+    editSamples: [],
     updatedAt: Date.now(),
   }
 }

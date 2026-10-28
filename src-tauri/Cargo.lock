@@ -6711,7 +6711,7 @@ dependencies = [
 
 [[package]]
 name = "zili-writing"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "keyring",
  "log",
@@ -6726,6 +6726,8 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-sql",
  "tauri-plugin-updater",
+ "webview2-com",
+ "windows-core 0.61.2",
 ]
 
 [[package]]

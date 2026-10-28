@@ -2,7 +2,7 @@ import Database from '@tauri-apps/plugin-sql'
 import { isTauri } from '@tauri-apps/api/core'
 import { webDeleteWhere, webList, webPut } from './webDatabase'
 
-export type ReviewCategory = 'character' | 'timeline' | 'knowledge' | 'world' | 'motivation' | 'repetition' | 'pacing' | 'foreshadowing' | 'ai_fact'
+export type ReviewCategory = 'character' | 'timeline' | 'knowledge' | 'world' | 'motivation' | 'repetition' | 'pacing' | 'foreshadowing' | 'ai_fact' | 'prose'
 export type ReviewSeverity = 'info' | 'warning' | 'error'
 export type ReviewStatus = 'open' | 'confirmed' | 'resolved' | 'dismissed'
 export type ReviewSource = 'automatic' | 'selection_review' | 'scene_review' | 'chapter_review' | 'range_review' | 'project_review' | 'memory_consistency'

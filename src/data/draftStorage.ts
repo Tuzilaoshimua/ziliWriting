@@ -12,6 +12,8 @@ export type DraftValidation = {
   goalCoverage: string
   styleNotes: string[]
   overlapWarnings: string[]
+  /** 本地文风检测结果；旧候选可能没有这个字段。 */
+  styleWarnings?: string[]
 }
 
 export type DraftCandidate = {
